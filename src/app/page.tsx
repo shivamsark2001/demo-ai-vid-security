@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Shield, Zap, Eye } from 'lucide-react';
+import { Scan, Play } from 'lucide-react';
 import { upload } from '@vercel/blob/client';
 import { VideoUpload } from '@/components/VideoUpload';
 import { ContextInput } from '@/components/ContextInput';
@@ -28,10 +28,8 @@ export default function Home() {
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
-    // Create a local URL for preview
     const url = URL.createObjectURL(file);
     setVideoUrl(url);
-    // Reset state
     setResult(null);
     setStatus('idle');
   };
@@ -47,7 +45,7 @@ export default function Home() {
   };
 
   const pollJobStatus = useCallback(async (jobId: string) => {
-    const maxAttempts = 120; // 10 minutes max
+    const maxAttempts = 120;
     let attempts = 0;
 
     const poll = async (): Promise<AnalysisResult | null> => {
@@ -64,13 +62,12 @@ export default function Home() {
       } else if (data.status === 'FAILED') {
         throw new Error(data.error || 'Analysis failed');
       } else {
-        // Update progress based on status
         if (data.status === 'IN_QUEUE') {
           setCurrentStep('Waiting in queue...');
           setProgress(Math.min(10 + attempts, 30));
         } else if (data.status === 'IN_PROGRESS') {
           setStatus('processing');
-          setCurrentStep(data.progress?.step || 'Processing video...');
+          setCurrentStep(data.progress?.step || 'Processing...');
           setProgress(Math.min(30 + (attempts * 2), 90));
         }
         
@@ -82,7 +79,6 @@ export default function Home() {
     return poll();
   }, []);
 
-  // Delete blob after analysis to save storage costs
   const deleteBlob = async (url: string) => {
     try {
       await fetch('/api/blob-delete', {
@@ -90,7 +86,6 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      console.log('Blob deleted:', url);
     } catch (e) {
       console.warn('Failed to delete blob:', e);
     }
@@ -102,38 +97,32 @@ export default function Home() {
     let blobUrlToDelete: string | null = null;
 
     try {
-      // Step 1: Upload video using client-side upload
       setStatus('uploading');
       setProgress(0);
-      setCurrentStep('Uploading video...');
+      setCurrentStep('Uploading...');
 
       let blobUrl: string;
 
       try {
-        // Client-side upload directly to Vercel Blob (bypasses 4.5MB limit)
-        // Note: addRandomSuffix is set in the server-side handler (/api/upload)
         const blob = await upload(selectedFile.name, selectedFile, {
           access: 'public',
           handleUploadUrl: '/api/upload',
           onUploadProgress: (progressEvent) => {
             const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
             setProgress(percent);
-            setCurrentStep(`Uploading video... ${percent}%`);
+            setCurrentStep(`Uploading ${percent}%`);
           },
         });
         blobUrl = blob.url;
-        blobUrlToDelete = blob.url; // Save for cleanup later
-        console.log('Video uploaded to:', blobUrl);
+        blobUrlToDelete = blob.url;
       } catch (uploadError) {
         console.error('Upload failed:', uploadError);
         setStatus('failed');
-        setCurrentStep('Upload failed. Please try again.');
+        setCurrentStep('Upload failed');
         return;
       }
       
       setProgress(100);
-
-      // Step 2: Try RunPod first, fallback to mock
       setStatus('queued');
       setProgress(0);
       setCurrentStep('Starting analysis...');
@@ -163,11 +152,9 @@ export default function Home() {
       }
 
       if (useMock) {
-        // Use mock endpoint for demo
         setStatus('processing');
-        setCurrentStep('Running AI analysis (demo mode)...');
+        setCurrentStep('Analyzing...');
         
-        // Simulate progress
         for (let i = 0; i <= 100; i += 10) {
           setProgress(i);
           await new Promise(resolve => setTimeout(resolve, 200));
@@ -191,8 +178,6 @@ export default function Home() {
       }
 
       setProgress(10);
-
-      // Step 3: Poll for results
       const analysisResult = await pollJobStatus(jobId);
       
       if (analysisResult) {
@@ -204,7 +189,6 @@ export default function Home() {
       console.error('Analysis error:', error);
       setStatus('failed');
     } finally {
-      // Clean up blob after analysis (success or failure) - saves storage costs
       if (blobUrlToDelete) {
         deleteBlob(blobUrlToDelete);
       }
@@ -220,33 +204,26 @@ export default function Home() {
   const isAnalyzing = status !== 'idle' && status !== 'completed' && status !== 'failed';
 
   return (
-    <main className="min-h-screen p-6 md:p-10">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <header className="text-center mb-12 animate-slide-up">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/30 mb-6">
-            <Shield className="w-4 h-4 text-[var(--accent-primary)]" />
-            <span className="text-sm text-[var(--accent-primary)] font-medium">AI-Powered Security</span>
+    <main className="min-h-screen p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header - Minimal */}
+        <header className="mb-10 animate-slide-up">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-8 h-8 rounded-lg bg-[var(--accent-primary)] flex items-center justify-center">
+              <Scan className="w-4 h-4 text-[var(--bg-primary)]" />
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight">truvo</h1>
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-[var(--text-primary)] via-[var(--accent-primary)] to-[var(--accent-secondary)] bg-clip-text text-transparent">
-            Video Security Analyzer
-          </h1>
-          <p className="text-[var(--text-secondary)] max-w-2xl mx-auto">
-            Upload surveillance footage for intelligent threat detection. 
-            Get timestamped alerts with confidence scores.
+          <p className="text-sm text-[var(--text-muted)] ml-11">
+            Video intelligence for security
           </p>
         </header>
 
         {/* Main content */}
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* Left column - Upload & Controls */}
-          <div className="space-y-6">
-            {/* Upload section */}
-            <div className="glass-card p-6 animate-slide-up stagger-1">
-              <div className="flex items-center gap-2 mb-4">
-                <Eye className="w-5 h-5 text-[var(--accent-primary)]" />
-                <h2 className="font-semibold text-lg">Upload Footage</h2>
-              </div>
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* Left column */}
+          <div className="space-y-4">
+            <div className="glass-card p-5 animate-slide-up stagger-1">
               <VideoUpload
                 onFileSelect={handleFileSelect}
                 selectedFile={selectedFile}
@@ -255,8 +232,7 @@ export default function Home() {
               />
             </div>
 
-            {/* Context input */}
-            <div className="glass-card p-6 animate-slide-up stagger-2">
+            <div className="glass-card p-5 animate-slide-up stagger-2">
               <ContextInput
                 cameraContext={cameraContext}
                 detectionTargets={detectionTargets}
@@ -266,17 +242,15 @@ export default function Home() {
               />
             </div>
 
-            {/* Analyze button */}
             <button
               onClick={handleAnalyze}
               disabled={!selectedFile || isAnalyzing}
-              className="btn-primary w-full flex items-center justify-center gap-2 text-lg animate-slide-up stagger-3"
+              className="btn-primary w-full flex items-center justify-center gap-2 animate-slide-up stagger-3"
             >
-              <Zap className="w-5 h-5" />
-              {isAnalyzing ? 'Analyzing...' : 'Analyze Video'}
+              <Play className="w-4 h-4" />
+              {isAnalyzing ? 'Analyzing...' : 'Analyze'}
             </button>
 
-            {/* Progress */}
             <AnalysisProgress
               status={status}
               progress={progress}
@@ -284,11 +258,10 @@ export default function Home() {
             />
           </div>
 
-          {/* Right column - Video & Results */}
-          <div className="space-y-6">
-            {/* Video player */}
+          {/* Right column */}
+          <div className="space-y-4">
             {videoUrl && (
-              <div className="glass-card p-4 animate-slide-up stagger-2">
+              <div className="glass-card p-3 animate-slide-up stagger-2">
                 <VideoPlayer
                   ref={videoRef}
                   src={videoUrl}
@@ -298,12 +271,10 @@ export default function Home() {
               </div>
             )}
 
-            {/* Timeline */}
             {result && result.events.length > 0 && (
-              <div className="glass-card p-6 animate-slide-up">
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-[var(--accent-primary)] animate-pulse-glow" />
-                  Event Timeline
+              <div className="glass-card p-5 animate-slide-up">
+                <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
+                  Timeline
                 </h3>
                 <Timeline
                   events={result.events}
@@ -314,9 +285,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Event list */}
             {result && (
-              <div className="glass-card p-6 animate-slide-up">
+              <div className="glass-card p-5 animate-slide-up">
                 <EventList
                   events={result.events}
                   onEventClick={handleEventClick}
@@ -325,23 +295,18 @@ export default function Home() {
               </div>
             )}
 
-            {/* Empty state */}
             {!videoUrl && (
-              <div className="glass-card p-12 text-center animate-slide-up stagger-2">
-                <div className="w-20 h-20 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
-                  <Eye className="w-10 h-10 text-[var(--text-muted)]" />
+              <div className="glass-card p-10 text-center animate-slide-up stagger-2">
+                <div className="w-14 h-14 rounded-xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-3">
+                  <Scan className="w-6 h-6 text-[var(--text-muted)]" />
                 </div>
-                <h3 className="font-semibold text-[var(--text-secondary)] mb-2">
-                  No Video Selected
-                </h3>
                 <p className="text-sm text-[var(--text-muted)]">
-                  Upload a video to begin security analysis
+                  Upload video to start
                 </p>
               </div>
             )}
           </div>
         </div>
-
       </div>
     </main>
   );

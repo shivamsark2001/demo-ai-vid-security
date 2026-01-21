@@ -1,7 +1,5 @@
 'use client';
 
-import { Camera, Target } from 'lucide-react';
-
 interface ContextInputProps {
   cameraContext: string;
   detectionTargets: string;
@@ -18,45 +16,31 @@ export function ContextInput({
   disabled 
 }: ContextInputProps) {
   return (
-    <div className="space-y-5">
-      {/* Camera Context */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Camera className="w-4 h-4 text-[var(--accent-secondary)]" />
-          <label className="text-sm font-medium text-[var(--text-secondary)]">
-            Camera Context
-          </label>
-        </div>
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+          Scene Context
+        </label>
         <textarea
-          className="input-field min-h-[80px]"
-          placeholder="Where is the camera? What does it normally see?&#10;&#10;Example: Industrial site surveillance camera overlooking equipment yard. Normal activity includes workers, trucks loading/unloading, forklifts operating."
+          className="input-field min-h-[70px]"
+          placeholder="Describe the camera location and normal activity..."
           value={cameraContext}
           onChange={(e) => onCameraContextChange(e.target.value)}
           disabled={disabled}
         />
-        <p className="text-xs text-[var(--text-muted)]">
-          Describe the camera location and typical scene activity
-        </p>
       </div>
 
-      {/* Detection Targets */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Target className="w-4 h-4 text-[var(--accent-primary)]" />
-          <label className="text-sm font-medium text-[var(--text-secondary)]">
-            Detection Targets
-          </label>
-        </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+          Detect
+        </label>
         <textarea
-          className="input-field min-h-[80px]"
-          placeholder="What anomalies should be detected?&#10;&#10;Example: Fire, smoke, explosions, equipment damage, unauthorized personnel, safety violations"
+          className="input-field min-h-[70px]"
+          placeholder="What should be flagged? e.g. fire, smoke, intrusion..."
           value={detectionTargets}
           onChange={(e) => onDetectionTargetsChange(e.target.value)}
           disabled={disabled}
         />
-        <p className="text-xs text-[var(--text-muted)]">
-          List specific threats or behaviors to detect
-        </p>
       </div>
     </div>
   );
