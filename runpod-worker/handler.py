@@ -21,26 +21,53 @@ from transformers import AutoProcessor, AutoModel
 
 # Configuration
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-SIGLIP_MODEL = "google/siglip-base-patch16-384"
+# Using SigLIP 400M (SO400M) - larger model with better accuracy
+SIGLIP_MODEL = "google/siglip-so400m-patch14-384"
 GEMINI_MODEL = "google/gemini-2.0-flash-001"
 
 # Threat prompt bank for SigLIP scoring
+# Organized by category for better coverage
 THREAT_PROMPTS = [
+    # Fire & Smoke hazards
+    "fire burning",
+    "flames",
+    "smoke",
+    "explosion",
+    "building on fire",
+    "fire hazard",
+    "sparks flying",
+    
+    # Intrusion & Trespassing
     "a person breaking into a building",
     "a person climbing over a fence",
-    "a person wearing a mask or balaclava",
-    "a person running away quickly",
-    "a person carrying a weapon",
+    "a person trespassing in restricted area",
+    "a person forcing open a door or window",
+    "unauthorized entry",
+    
+    # Violence & Aggression
     "a person fighting or attacking someone",
+    "a person carrying a weapon",
+    "a group of people surrounding someone",
+    "physical altercation",
+    
+    # Theft & Vandalism
     "a person stealing or taking something",
     "a person vandalizing property",
+    "a person spray painting graffiti",
+    "property damage",
+    
+    # Suspicious behavior
+    "a person wearing a mask or balaclava",
+    "a person running away quickly",
     "a person loitering suspiciously",
     "a person hiding or ducking",
-    "a person trespassing in restricted area",
     "a person looking around nervously",
-    "a person forcing open a door or window",
-    "a person spray painting graffiti",
-    "a group of people surrounding someone",
+    
+    # Accidents & Hazards
+    "person fallen on ground",
+    "vehicle accident",
+    "flooding or water leak",
+    "structural damage",
 ]
 
 
@@ -135,6 +162,68 @@ def load_siglip_model():
     return model, processor, device
 
 
+def parse_context_to_prompts(context_text: str) -> List[str]:
+    """
+    Parse user context into additional detection prompts.
+    Handles various input formats like "detect fire" or "look for intruders".
+    """
+    if not context_text:
+        return []
+    
+    context_lower = context_text.lower().strip()
+    prompts = []
+    
+    # Direct context as prompt
+    prompts.append(context_lower)
+    
+    # Handle "detect X" pattern
+    if context_lower.startswith("detect "):
+        target = context_lower.replace("detect ", "")
+        prompts.extend([
+            target,
+            f"{target} visible",
+            f"{target} in the scene",
+        ])
+    
+    # Handle "look for X" pattern
+    if "look for " in context_lower:
+        target = context_lower.split("look for ")[-1]
+        prompts.extend([
+            target,
+            f"{target} visible",
+        ])
+    
+    # Fire-specific expansions
+    if "fire" in context_lower:
+        prompts.extend([
+            "fire burning",
+            "flames",
+            "smoke rising",
+            "building on fire",
+            "fire hazard visible",
+        ])
+    
+    # Smoke-specific expansions
+    if "smoke" in context_lower:
+        prompts.extend([
+            "smoke",
+            "smoke rising",
+            "smoke cloud",
+            "visible smoke",
+        ])
+    
+    # Intrusion-specific expansions
+    if any(word in context_lower for word in ["intruder", "break", "trespass"]):
+        prompts.extend([
+            "intruder",
+            "person breaking in",
+            "unauthorized person",
+            "trespasser",
+        ])
+    
+    return list(set(prompts))  # Remove duplicates
+
+
 def score_frames_siglip(
     frames: List[Dict],
     prompts: List[str],
@@ -149,13 +238,11 @@ def score_frames_siglip(
     """
     # Add context-specific prompts if provided
     all_prompts = list(prompts)
-    if context_text:
-        # Parse context into additional prompts
-        context_prompts = [
-            f"a person {context_text.lower()}",
-            context_text.lower(),
-        ]
-        all_prompts.extend(context_prompts)
+    context_prompts = parse_context_to_prompts(context_text)
+    all_prompts.extend(context_prompts)
+    all_prompts = list(set(all_prompts))  # Remove duplicates
+    
+    print(f"Scoring against {len(all_prompts)} prompts")
     
     scored_frames = []
     
@@ -440,9 +527,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             frames, THREAT_PROMPTS, model, processor, device, context_text
         )
         
-        # Step 4: Build event segments
+        # Step 4: Build event segments (lower threshold for better recall)
         print("Building event segments...")
-        events = build_event_segments(scored_frames, threshold=0.3)
+        events = build_event_segments(scored_frames, threshold=0.25)
         
         print(f"Found {len(events)} potential events")
         
