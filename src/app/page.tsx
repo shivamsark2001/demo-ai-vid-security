@@ -114,6 +114,7 @@ export default function Home() {
         const blob = await upload(selectedFile.name, selectedFile, {
           access: 'public',
           handleUploadUrl: '/api/upload',
+          addRandomSuffix: true, // Prevent "blob already exists" errors
           onUploadProgress: (progressEvent) => {
             const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
             setProgress(percent);
