@@ -1,32 +1,63 @@
 'use client';
 
-import { MessageSquare } from 'lucide-react';
+import { Camera, Target } from 'lucide-react';
 
 interface ContextInputProps {
-  value: string;
-  onChange: (value: string) => void;
+  cameraContext: string;
+  detectionTargets: string;
+  onCameraContextChange: (value: string) => void;
+  onDetectionTargetsChange: (value: string) => void;
   disabled?: boolean;
 }
 
-export function ContextInput({ value, onChange, disabled }: ContextInputProps) {
+export function ContextInput({ 
+  cameraContext, 
+  detectionTargets, 
+  onCameraContextChange, 
+  onDetectionTargetsChange, 
+  disabled 
+}: ContextInputProps) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <MessageSquare className="w-4 h-4 text-[var(--accent-secondary)]" />
-        <label className="text-sm font-medium text-[var(--text-secondary)]">
-          Analysis Context
-        </label>
+    <div className="space-y-5">
+      {/* Camera Context */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Camera className="w-4 h-4 text-[var(--accent-secondary)]" />
+          <label className="text-sm font-medium text-[var(--text-secondary)]">
+            Camera Context
+          </label>
+        </div>
+        <textarea
+          className="input-field min-h-[80px]"
+          placeholder="Where is the camera? What does it normally see?&#10;&#10;Example: Industrial site surveillance camera overlooking equipment yard. Normal activity includes workers, trucks loading/unloading, forklifts operating."
+          value={cameraContext}
+          onChange={(e) => onCameraContextChange(e.target.value)}
+          disabled={disabled}
+        />
+        <p className="text-xs text-[var(--text-muted)]">
+          Describe the camera location and typical scene activity
+        </p>
       </div>
-      <textarea
-        className="input-field min-h-[120px]"
-        placeholder="Describe what to look for...&#10;&#10;Examples:&#10;• Detect unauthorized access or trespassing&#10;• Monitor for suspicious loitering near entrance&#10;• Identify aggressive behavior or physical altercations&#10;• Track package theft or delivery tampering"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-      />
-      <p className="text-xs text-[var(--text-muted)]">
-        Be specific about the threats or behaviors you want to detect. This helps the AI focus on relevant events.
-      </p>
+
+      {/* Detection Targets */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Target className="w-4 h-4 text-[var(--accent-primary)]" />
+          <label className="text-sm font-medium text-[var(--text-secondary)]">
+            Detection Targets
+          </label>
+        </div>
+        <textarea
+          className="input-field min-h-[80px]"
+          placeholder="What anomalies should be detected?&#10;&#10;Example: Fire, smoke, explosions, equipment damage, unauthorized personnel, safety violations"
+          value={detectionTargets}
+          onChange={(e) => onDetectionTargetsChange(e.target.value)}
+          disabled={disabled}
+        />
+        <p className="text-xs text-[var(--text-muted)]">
+          List specific threats or behaviors to detect
+        </p>
+      </div>
     </div>
   );
 }

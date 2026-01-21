@@ -13,7 +13,8 @@ import { AnalysisStatus, AnalysisResult, TimelineEvent } from '@/types';
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [contextText, setContextText] = useState('');
+  const [cameraContext, setCameraContext] = useState('');
+  const [detectionTargets, setDetectionTargets] = useState('');
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('');
@@ -124,7 +125,8 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             video_url: blobUrl,
-            context_text: contextText || 'Detect any suspicious or threatening behavior',
+            camera_context: cameraContext || 'Security surveillance camera',
+            detection_targets: detectionTargets || 'Suspicious or threatening behavior, unauthorized access, safety hazards',
           }),
         });
 
@@ -154,7 +156,8 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             video_url: blobUrl,
-            context_text: contextText,
+            camera_context: cameraContext,
+            detection_targets: detectionTargets,
           }),
         });
 
@@ -228,8 +231,10 @@ export default function Home() {
             {/* Context input */}
             <div className="glass-card p-6 animate-slide-up stagger-2">
               <ContextInput
-                value={contextText}
-                onChange={setContextText}
+                cameraContext={cameraContext}
+                detectionTargets={detectionTargets}
+                onCameraContextChange={setCameraContext}
+                onDetectionTargetsChange={setDetectionTargets}
                 disabled={isAnalyzing}
               />
             </div>

@@ -1,5 +1,5 @@
 # RunPod Serverless Worker for Video Security Analysis
-# Python + ffmpeg + SigLIP + Gemini verification
+# 2-Stage Pipeline: SigLIP2 Edge Detection + Gemini Verification
 
 FROM runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04
 
@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libgl1-mesa-glx \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for caching
@@ -20,8 +21,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download SigLIP SO400M model (larger, more accurate)
-RUN python -c "from transformers import AutoProcessor, AutoModel; AutoProcessor.from_pretrained('google/siglip-so400m-patch14-384'); AutoModel.from_pretrained('google/siglip-so400m-patch14-384')"
+# Pre-download SigLIP2 model (ViT-SO400M-14-SigLIP-384) via open_clip
+RUN python -c "import open_clip; open_clip.create_model_and_transforms('ViT-SO400M-14-SigLIP-384', pretrained='webli')"
 
 # Copy handler
 COPY handler.py .
