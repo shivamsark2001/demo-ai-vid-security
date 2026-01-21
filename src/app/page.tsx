@@ -91,7 +91,7 @@ export default function Home() {
       setProgress(0);
       setCurrentStep('Uploading video...');
 
-      let blobUrl = videoUrl; // Use local URL as fallback
+      let blobUrl: string;
 
       try {
         // Client-side upload directly to Vercel Blob (bypasses 4.5MB limit)
@@ -105,8 +105,12 @@ export default function Home() {
           },
         });
         blobUrl = blob.url;
+        console.log('Video uploaded to:', blobUrl);
       } catch (uploadError) {
-        console.log('Using local video URL:', uploadError);
+        console.error('Upload failed:', uploadError);
+        setStatus('failed');
+        setCurrentStep('Upload failed. Please try again.');
+        return;
       }
       
       setProgress(100);
