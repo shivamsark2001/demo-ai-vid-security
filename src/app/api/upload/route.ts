@@ -13,6 +13,7 @@ export async function POST(request: NextRequest) {
         return {
           allowedContentTypes: ['video/mp4', 'video/quicktime', 'video/webm', 'video/x-msvideo', 'video/mpeg'],
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB
+          addRandomSuffix: true, // Prevent "blob already exists" errors
         };
       },
       onUploadCompleted: async ({ blob }) => {
