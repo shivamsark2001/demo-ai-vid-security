@@ -111,10 +111,10 @@ export default function Home() {
 
       try {
         // Client-side upload directly to Vercel Blob (bypasses 4.5MB limit)
+        // Note: addRandomSuffix is set in the server-side handler (/api/upload)
         const blob = await upload(selectedFile.name, selectedFile, {
           access: 'public',
           handleUploadUrl: '/api/upload',
-          addRandomSuffix: true, // Prevent "blob already exists" errors
           onUploadProgress: (progressEvent) => {
             const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
             setProgress(percent);
