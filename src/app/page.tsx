@@ -82,8 +82,24 @@ export default function Home() {
     return poll();
   }, []);
 
+  // Delete blob after analysis to save storage costs
+  const deleteBlob = async (url: string) => {
+    try {
+      await fetch('/api/blob-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      console.log('Blob deleted:', url);
+    } catch (e) {
+      console.warn('Failed to delete blob:', e);
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!selectedFile) return;
+
+    let blobUrlToDelete: string | null = null;
 
     try {
       // Step 1: Upload video using client-side upload
@@ -105,6 +121,7 @@ export default function Home() {
           },
         });
         blobUrl = blob.url;
+        blobUrlToDelete = blob.url; // Save for cleanup later
         console.log('Video uploaded to:', blobUrl);
       } catch (uploadError) {
         console.error('Upload failed:', uploadError);
@@ -185,6 +202,11 @@ export default function Home() {
     } catch (error) {
       console.error('Analysis error:', error);
       setStatus('failed');
+    } finally {
+      // Clean up blob after analysis (success or failure) - saves storage costs
+      if (blobUrlToDelete) {
+        deleteBlob(blobUrlToDelete);
+      }
     }
   };
 
