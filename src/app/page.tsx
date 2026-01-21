@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { Shield, Zap, Eye } from 'lucide-react';
+import { upload } from '@vercel/blob/client';
 import { VideoUpload } from '@/components/VideoUpload';
 import { ContextInput } from '@/components/ContextInput';
 import { AnalysisProgress } from '@/components/AnalysisProgress';
@@ -84,7 +85,7 @@ export default function Home() {
     if (!selectedFile) return;
 
     try {
-      // Step 1: Upload video
+      // Step 1: Upload video using client-side upload
       setStatus('uploading');
       setProgress(0);
       setCurrentStep('Uploading video...');
@@ -92,20 +93,19 @@ export default function Home() {
       let blobUrl = videoUrl; // Use local URL as fallback
 
       try {
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        // Client-side upload directly to Vercel Blob (bypasses 4.5MB limit)
+        const blob = await upload(selectedFile.name, selectedFile, {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+          onUploadProgress: (progressEvent) => {
+            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+            setProgress(percent);
+            setCurrentStep(`Uploading video... ${percent}%`);
+          },
         });
-
-        if (uploadResponse.ok) {
-          const uploadData = await uploadResponse.json();
-          blobUrl = uploadData.url;
-        }
-      } catch {
-        console.log('Using local video URL (Blob not configured)');
+        blobUrl = blob.url;
+      } catch (uploadError) {
+        console.log('Using local video URL:', uploadError);
       }
       
       setProgress(100);
