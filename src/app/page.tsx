@@ -205,8 +205,8 @@ export default function Home() {
             Video Security Analyzer
           </h1>
           <p className="text-[var(--text-secondary)] max-w-2xl mx-auto">
-            Upload surveillance footage for AI-powered threat detection using SigLIP vision models 
-            and Gemini verification. Get timestamped alerts with confidence scores.
+            Upload surveillance footage for intelligent threat detection. 
+            Get timestamped alerts with confidence scores.
           </p>
         </header>
 
@@ -315,38 +315,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Features */}
-        <div className="grid md:grid-cols-3 gap-6 mt-12">
-          {[
-            {
-              icon: Eye,
-              title: 'SigLIP Vision',
-              description: 'State-of-the-art vision model scores each frame against a threat prompt bank',
-            },
-            {
-              icon: Zap,
-              title: 'Gemini Verification',
-              description: 'Multi-frame context analysis with detailed explanations for each detection',
-            },
-            {
-              icon: Shield,
-              title: 'Timeline Events',
-              description: 'Click-to-jump timestamps with severity scoring and confidence metrics',
-            },
-          ].map((feature, index) => (
-            <div 
-              key={feature.title}
-              className="glass-card p-6 animate-slide-up"
-              style={{ animationDelay: `${0.4 + index * 0.1}s` }}
-            >
-              <div className="w-12 h-12 rounded-xl bg-[var(--accent-secondary)]/20 flex items-center justify-center mb-4">
-                <feature.icon className="w-6 h-6 text-[var(--accent-secondary)]" />
-              </div>
-              <h3 className="font-semibold mb-2">{feature.title}</h3>
-              <p className="text-sm text-[var(--text-secondary)]">{feature.description}</p>
-            </div>
-          ))}
-        </div>
       </div>
     </main>
   );
