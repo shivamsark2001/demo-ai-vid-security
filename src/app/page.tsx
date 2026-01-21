@@ -212,7 +212,7 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-[var(--accent-primary)] flex items-center justify-center">
               <Scan className="w-4 h-4 text-[var(--bg-primary)]" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">truvo</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">truwo</h1>
           </div>
           <p className="text-sm text-[var(--text-muted)] ml-11">
             Video intelligence for security
