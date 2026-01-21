@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-RunPod Serverless Handler - Video Security Analysis
-====================================================
-2-Stage Pipeline: SigLIP2 Edge Detection → Gemini Verification
+Video Security Analysis - Standalone Test Version
+==================================================
+Run this directly on your A40 pod for fast iteration.
+
+Usage:
+    python handler_test.py --video_url "https://..." --camera_context "..." --detection_targets "..."
+    
+Or edit the TEST_INPUT at the bottom and run:
+    python handler_test.py
 """
 
 import os
@@ -12,20 +18,20 @@ import base64
 import tempfile
 import subprocess
 import re
+import argparse
 from typing import List, Dict, Any
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from io import BytesIO
 
-import runpod
 import requests
 import torch
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 # ============ Configuration ============
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-GEMINI_MODEL = "google/gemini-3-flash-preview"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+GEMINI_MODEL = "google/gemini-2.0-flash-001"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 print(f"🖥️  Device: {DEVICE}")
@@ -36,21 +42,6 @@ SIGLIP_MODEL = None
 SIGLIP_PREPROCESS = None
 SIGLIP_TOKENIZER = None
 USE_OPEN_CLIP = False
-
-
-@dataclass
-class TimelineEvent:
-    id: str
-    t0: float
-    t1: float
-    label: str
-    score: float
-    severity: str
-    geminiVerdict: bool
-    geminiConfidence: float
-    geminiExplanation: str
-    keyframeUrls: List[str]
-
 
 def load_siglip():
     """Load SigLIP2 model - tries open_clip first, falls back to transformers."""
@@ -423,24 +414,9 @@ Analyze the frame grid. Respond in JSON:
     return {"reasoning": response, "is_anomaly": "anomaly" in response.lower()}
 
 
-# ============ RunPod Handler ============
-def handler(job: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Main RunPod handler.
-    Input: { video_url, camera_context, detection_targets, fps, max_frames }
-    Output: { events: [...], videoDuration, processedAt }
-    """
-    job_input = job.get("input", {})
-    
-    video_url = job_input.get("video_url")
-    camera_context = job_input.get("camera_context", "Security surveillance camera")
-    detection_targets = job_input.get("detection_targets", "Fire, smoke, suspicious activity")
-    fps = job_input.get("fps", 2)
-    max_frames = job_input.get("max_frames", 64)
-    
-    if not video_url:
-        return {"error": "video_url is required"}
-    
+# ============ Main Pipeline ============
+def run_pipeline(video_url: str, camera_context: str, detection_targets: str) -> Dict:
+    """Run the full detection pipeline."""
     print("\n" + "="*60)
     print("🎬 VIDEO SECURITY ANALYSIS PIPELINE")
     print("="*60)
@@ -455,7 +431,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             return {"error": "Download failed"}
         
         # Step 2: Extract frames
-        frames = extract_frames(video_path, frames_dir, fps=fps, max_frames=max_frames)
+        frames = extract_frames(video_path, frames_dir)
         if not frames:
             return {"error": "No frames extracted"}
         
@@ -487,40 +463,43 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
         print("="*60)
         
-        # Build timeline events
-        events = []
-        if final_is_anomaly:
-            first_ts = frames[0]["timestamp"]
-            last_ts = frames[-1]["timestamp"]
-            
-            confidence = gemini_result.get("confidence", edge_result["confidence"])
-            severity = "high" if confidence >= 0.7 else "medium" if confidence >= 0.5 else "low"
-            
-            event = TimelineEvent(
-                id=str(uuid.uuid4()),
-                t0=first_ts,
-                t1=last_ts,
-                label=gemini_result.get("anomaly_type") or edge_result.get("top_anomaly_prompt", "Anomaly"),
-                score=confidence,
-                severity=severity,
-                geminiVerdict=True,
-                geminiConfidence=confidence,
-                geminiExplanation=gemini_result.get("reasoning", ""),
-                keyframeUrls=[]
-            )
-            events.append(asdict(event))
-        
-        video_duration = frames[-1]["timestamp"] if frames else 0
-        
         return {
-            "jobId": job.get("id", ""),
-            "status": "completed",
-            "videoUrl": video_url,
-            "videoDuration": video_duration,
-            "events": events,
-            "processedAt": subprocess.check_output(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).decode().strip()
+            "final_verdict": {
+                "is_anomaly": final_is_anomaly,
+                "anomaly_type": gemini_result.get("anomaly_type"),
+                "confidence": gemini_result.get("confidence", edge_result["confidence"])
+            },
+            "edge_detection": edge_result,
+            "gemini_verification": gemini_result,
+            "prompt_banks": prompt_banks
         }
 
 
-# Start RunPod serverless
-runpod.serverless.start({"handler": handler})
+# ============ Test Mode ============
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Video Security Analysis Test")
+    parser.add_argument("--video_url", type=str, help="URL to video file")
+    parser.add_argument("--camera_context", type=str, default="Security surveillance camera")
+    parser.add_argument("--detection_targets", type=str, default="Fire, smoke, suspicious activity")
+    args = parser.parse_args()
+    
+    # Use args or fallback to test input
+    TEST_INPUT = {
+        "video_url": args.video_url or "YOUR_VIDEO_URL_HERE",
+        "camera_context": args.camera_context or "Industrial site surveillance camera overlooking equipment yard and machinery",
+        "detection_targets": args.detection_targets or "Fire, flames, smoke, explosions, burning, safety hazards"
+    }
+    
+    if TEST_INPUT["video_url"] == "YOUR_VIDEO_URL_HERE":
+        print("❌ Please provide a video URL!")
+        print("\nUsage:")
+        print('  python handler_test.py --video_url "https://..." --camera_context "..." --detection_targets "..."')
+        print("\nOr edit TEST_INPUT in this file directly.")
+    else:
+        result = run_pipeline(
+            TEST_INPUT["video_url"],
+            TEST_INPUT["camera_context"],
+            TEST_INPUT["detection_targets"]
+        )
+        print("\n📦 FULL RESULT:")
+        print(json.dumps(result, indent=2, default=str))
