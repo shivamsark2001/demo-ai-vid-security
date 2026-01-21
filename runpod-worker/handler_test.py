@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 # ============ Configuration ============
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "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")
 GEMINI_MODEL = "google/gemini-2.0-flash-001"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
