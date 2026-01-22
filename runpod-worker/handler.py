@@ -815,7 +815,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     video_url = job_input.get("video_url")
     camera_context = job_input.get("camera_context", "Security camera")
     detection_targets = job_input.get("detection_targets", "Suspicious activity")
-    mode = job_input.get("mode", "batch")  # "batch" or "hysteresis"
+    mode = job_input.get("mode", "hysteresis")  # "hysteresis" or "batch"
     
     # Batch mode params
     num_frames = job_input.get("num_frames", 8)
