@@ -143,13 +143,12 @@ Generate text prompts for image matching:
 1. NORMAL: 10 descriptions of normal behavior
 2. ANOMALY: 10 descriptions of abnormal behavior
 
-Keep them general so that they can be used for many videos.
+Keep them general so that they can be used for many videos in the context of the detection targets.
 
 JSON only:
 {{
     "normal_prompts": ["desc1", ...],
     "anomaly_prompts": ["desc1", ...],
-    "detection_summary": "Brief summary"
 }}"""
 
     response = call_gemini(prompt, max_tokens=1200)
