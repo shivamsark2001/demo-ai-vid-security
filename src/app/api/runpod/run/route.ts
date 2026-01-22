@@ -41,8 +41,10 @@ export async function POST(request: NextRequest) {
         camera_context: camera_context || 'Security surveillance camera',
         detection_targets: detection_targets || 'Suspicious or threatening behavior',
         sample_fps: 2.0,
-        high_threshold: 0.015,
-        min_frames_to_trigger: 2,
+        high_threshold: 0,
+        low_threshold: 0,
+        min_frames_to_trigger: 1,
+        min_frames_to_clear: 4,
       }),
     });
 
