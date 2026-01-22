@@ -192,6 +192,7 @@ export default function Home() {
   };
 
   const isAnalyzing = status !== 'idle' && status !== 'completed' && status !== 'failed';
+  const hasResults = result !== null;
 
   return (
     <main className="min-h-screen p-4 md:p-6 lg:p-8">
@@ -210,9 +211,10 @@ export default function Home() {
         </header>
 
         {/* Main Grid */}
-        <div className="grid lg:grid-cols-5 gap-5">
-          {/* Left - Controls */}
-          <div className="lg:col-span-2 space-y-4">
+        <div className="grid lg:grid-cols-2 gap-6">
+          {/* LEFT - All Inputs */}
+          <div className="space-y-4">
+            {/* Video Upload */}
             <div className="glass-card p-4 animate-slide-up stagger-1">
               <VideoUpload
                 onFileSelect={handleFileSelect}
@@ -222,6 +224,17 @@ export default function Home() {
               />
             </div>
 
+            {/* Video Preview */}
+            {videoUrl && (
+              <div className="glass-card p-3 animate-slide-up">
+                <VideoPlayer
+                  ref={videoRef}
+                  src={videoUrl}
+                />
+              </div>
+            )}
+
+            {/* Context Input */}
             <div className="glass-card p-4 animate-slide-up stagger-2">
               <ContextInput
                 cameraContext={cameraContext}
@@ -232,6 +245,7 @@ export default function Home() {
               />
             </div>
 
+            {/* Analyze Button */}
             <button
               onClick={handleAnalyze}
               disabled={!selectedFile || isAnalyzing}
@@ -241,6 +255,7 @@ export default function Home() {
               {isAnalyzing ? 'Analyzing...' : 'Analyze Video'}
             </button>
 
+            {/* Progress */}
             <AnalysisProgress
               status={status}
               progress={progress}
@@ -248,33 +263,20 @@ export default function Home() {
             />
           </div>
 
-          {/* Right - Results */}
-          <div className="lg:col-span-3 space-y-4">
-            {/* Video Player */}
-            {videoUrl && (
-              <div className="glass-card p-3 animate-slide-up stagger-2">
-                <VideoPlayer
-                  ref={videoRef}
-                  src={videoUrl}
-                />
-              </div>
-            )}
-
-            {/* Analysis Results */}
-            {result && (
+          {/* RIGHT - All Outputs */}
+          <div className="space-y-4">
+            {/* Results */}
+            {hasResults ? (
               <div className="animate-slide-up">
                 <PipelineResults result={result} />
               </div>
-            )}
-
-            {/* Empty State */}
-            {!videoUrl && (
-              <div className="glass-card p-12 text-center animate-slide-up stagger-2">
+            ) : (
+              <div className="glass-card p-12 text-center animate-slide-up stagger-2 h-full flex flex-col items-center justify-center min-h-[400px]">
                 <div className="w-16 h-16 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
                   <Scan className="w-8 h-8 text-[var(--text-muted)]" />
                 </div>
                 <p className="text-[var(--text-muted)] text-sm">
-                  Upload a video to begin analysis
+                  Analysis results will appear here
                 </p>
               </div>
             )}
