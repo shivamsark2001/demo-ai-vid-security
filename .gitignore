@@ -46,3 +46,9 @@ Untitled
 *.key
 *.secret
 __pycache__/
+
+# Local video files (already hosted on Vercel Blob)
+videos/
+*.mp4
+*.mov
+*.avi
