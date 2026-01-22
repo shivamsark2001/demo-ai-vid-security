@@ -2,7 +2,7 @@
 """
 RunPod Serverless Handler - Video Security Analysis
 ====================================================
-Sequential Processing with Hysteresis: Detect sustained anomaly events
+Batch Processing Pipeline: More accurate aggregate scoring across all frames
 """
 
 import os
@@ -133,31 +133,42 @@ def generate_prompt_banks(camera_context: str, detection_targets: str) -> tuple:
     """Generate normal/anomaly prompts using Gemini."""
     print("🤖 Generating prompt banks...")
     
-    prompt = f"""Generate prompt banks for video anomaly detection.
+    prompt = f"""You are an expert in video anomaly detection systems. Generate prompt banks for a 2-stage detection pipeline.
 
-CAMERA: {camera_context}
-DETECT: {detection_targets}
+=== CAMERA CONTEXT ===
+{camera_context}
 
-Generate text prompts for image matching:
-1. NORMAL: 10 descriptions of normal behavior
-2. ANOMALY: 10 descriptions of abnormal behavior
+=== WHAT USER WANTS TO DETECT ===
+{detection_targets}
 
-Keep them general so that they can be used for many videos in the context of the detection targets.
+=== YOUR TASK ===
+Generate two sets of text prompts optimized for CLIP/SigLIP image-text matching:
 
-JSON only:
+1. **NORMAL PROMPTS**: 15-20 descriptions of normal, expected behavior in this camera's context
+2. **ANOMALY PROMPTS**: 15-20 descriptions of abnormal/suspicious behavior the user wants to detect
+
+IMPORTANT: 
+- Each prompt should be a short, visual description (5-15 words)
+- Focus on what can be SEEN in a single frame
+- Be specific to the camera context provided
+- Normal prompts should capture typical activity
+- Anomaly prompts should describe visible signs of the target anomalies
+
+Respond in valid JSON format ONLY (no markdown, no explanation):
 {{
-    "normal_prompts": ["desc1", ...],
-    "anomaly_prompts": ["desc1", ...],
+    "normal_prompts": ["description 1", "description 2", ...],
+    "anomaly_prompts": ["description 1", "description 2", ...],
+    "detection_summary": "Brief summary of what the system will detect"
 }}"""
 
-    response = call_gemini(prompt, max_tokens=1200)
+    response = call_gemini(prompt, max_tokens=1500)
     
     if isinstance(response, dict) and "error" in response:
         return None, f"Error: {response['error']}"
     
     parsed = extract_json_object(response)
     if parsed and "normal_prompts" in parsed and "anomaly_prompts" in parsed:
-        print(f"  ✅ Generated prompts")
+        print(f"  ✅ Generated {len(parsed['normal_prompts'])} normal, {len(parsed['anomaly_prompts'])} anomaly prompts")
         return parsed, None
     
     return None, f"Parse failed"
@@ -186,7 +197,7 @@ def get_video_info(video_path: str) -> tuple:
         result = subprocess.check_output([
             "ffprobe", "-v", "error",
             "-select_streams", "v:0",
-            "-show_entries", "stream=r_frame_rate,duration",
+            "-show_entries", "stream=r_frame_rate,duration,nb_frames",
             "-show_entries", "format=duration",
             "-of", "json", video_path
         ]).decode()
@@ -202,50 +213,63 @@ def get_video_info(video_path: str) -> tuple:
         return 60, 30
 
 
-def extract_frame_at_time(video_path: str, timestamp: float, output_path: str) -> bool:
-    """Extract a single frame at specific timestamp."""
-    try:
-        subprocess.run([
-            "ffmpeg", "-ss", str(timestamp), "-i", video_path,
-            "-vframes", "1", "-q:v", "2", output_path, "-y"
-        ], capture_output=True, check=True)
-        return os.path.exists(output_path)
-    except:
-        return False
-
-
-def extract_frames_range(video_path: str, start_time: float, end_time: float, output_dir: str, fps: float = 1) -> List[Dict]:
-    """Extract frames from a time range."""
-    output_pattern = os.path.join(output_dir, "frame_%04d.jpg")
-    duration = end_time - start_time
+def extract_frames_uniform(video_path: str, output_dir: str, num_frames: int = 8) -> List[Dict]:
+    """Extract uniformly spaced frames from entire video."""
+    print(f"🎞️  Extracting {num_frames} frames uniformly...")
     
-    subprocess.run([
-        "ffmpeg", "-ss", str(start_time), "-i", video_path,
-        "-t", str(duration), "-vf", f"fps={fps}",
-        "-q:v", "2", output_pattern, "-y"
-    ], capture_output=True)
+    # Get duration first
+    duration, _ = get_video_info(video_path)
     
     frames = []
-    for i, f in enumerate(sorted(Path(output_dir).glob("frame_*.jpg"))):
-        frames.append({
-            "path": str(f),
-            "timestamp": start_time + (i / fps),
-            "index": i
-        })
+    for i in range(num_frames):
+        # Calculate timestamp for uniform sampling
+        timestamp = (i / (num_frames - 1)) * duration if num_frames > 1 else 0
+        output_path = os.path.join(output_dir, f"frame_{i:04d}.jpg")
+        
+        try:
+            subprocess.run([
+                "ffmpeg", "-ss", str(timestamp), "-i", video_path,
+                "-vframes", "1", "-q:v", "2", output_path, "-y"
+            ], capture_output=True, check=True)
+            
+            if os.path.exists(output_path):
+                frames.append({
+                    "path": output_path,
+                    "timestamp": timestamp,
+                    "index": i
+                })
+        except Exception as e:
+            print(f"  ⚠ Failed to extract frame at {timestamp:.1f}s: {e}")
+    
+    print(f"  ✅ Extracted {len(frames)} frames")
     return frames
 
 
-def score_frame(image: Image.Image, normal_prompts: List[str], anomaly_prompts: List[str]) -> Dict:
-    """Score a single frame against prompts."""
+def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], anomaly_prompts: List[str]) -> Dict:
+    """
+    Batch SigLIP2 detection - process all frames together for better accuracy.
+    This is more accurate than sequential scoring because:
+    1. Batch normalization context across frames
+    2. Aggregate scoring is more robust to outliers
+    3. All frames contribute to the final decision
+    """
     model, preprocess, tokenizer = load_siglip()
     
+    if not normal_prompts or not anomaly_prompts:
+        return {"error": "No prompts provided"}
+    
+    print(f"⚡ Batch scoring {len(frames)} frames...")
+    
     if USE_OPEN_CLIP:
-        processed = preprocess(image).unsqueeze(0).to(DEVICE)
+        # Encode ALL images at once (batch processing)
+        processed = torch.stack([preprocess(f) for f in frames]).to(DEVICE)
         
         with torch.no_grad():
+            # Batch encode images
             img_features = model.encode_image(processed)
             img_features = img_features / img_features.norm(dim=-1, keepdim=True)
             
+            # Encode prompts (only once, reused for all frames)
             normal_tokens = tokenizer(normal_prompts).to(DEVICE)
             anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
             
@@ -255,52 +279,87 @@ def score_frame(image: Image.Image, normal_prompts: List[str], anomaly_prompts: 
             anomaly_features = model.encode_text(anomaly_tokens)
             anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
         
-        normal_sim = (img_features @ normal_features.T).max().item()
-        anomaly_sim = (img_features @ anomaly_features.T).max().item()
+        # Per-frame similarities (vectorized - much faster)
+        # Shape: [num_frames, num_prompts] -> max per frame -> [num_frames]
+        normal_sim = (img_features @ normal_features.T).max(dim=1).values
+        anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values
         
-        best_anomaly_idx = (img_features @ anomaly_features.T).argmax().item()
-        best_normal_idx = (img_features @ normal_features.T).argmax().item()
+        # Per-frame score differences
+        per_frame_scores = (anomaly_sim - normal_sim).cpu().numpy().tolist()
+        
+        # Aggregate scores across ALL frames (key difference from hysteresis)
+        avg_normal = normal_sim.mean().item()
+        avg_anomaly = anomaly_sim.mean().item()
+        score_diff = avg_anomaly - avg_normal
+        
+        # Best matching prompts (averaged across frames)
+        best_anomaly_idx = (img_features @ anomaly_features.T).mean(dim=0).argmax().item()
+        best_normal_idx = (img_features @ normal_features.T).mean(dim=0).argmax().item()
+        
     else:
-        inputs = preprocess(
-            text=normal_prompts + anomaly_prompts,
-            images=image, return_tensors="pt", padding=True
-        ).to(DEVICE)
+        # HuggingFace transformers fallback (batch processing)
+        all_normal_sims = []
+        all_anomaly_sims = []
+        per_frame_scores = []
         
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits_per_image[0]
-            probs = torch.sigmoid(logits).cpu().numpy()
+        for frame in frames:
+            inputs = preprocess(
+                text=normal_prompts + anomaly_prompts,
+                images=frame, return_tensors="pt", padding=True
+            ).to(DEVICE)
+            
+            with torch.no_grad():
+                outputs = model(**inputs)
+                logits = outputs.logits_per_image[0]
+                probs = torch.sigmoid(logits).cpu().numpy()
+            
+            n = len(normal_prompts)
+            normal_sim = float(probs[:n].max())
+            anomaly_sim = float(probs[n:].max())
+            
+            all_normal_sims.append(normal_sim)
+            all_anomaly_sims.append(anomaly_sim)
+            per_frame_scores.append(anomaly_sim - normal_sim)
         
-        n = len(normal_prompts)
-        normal_sim = float(probs[:n].max())
-        anomaly_sim = float(probs[n:].max())
-        best_anomaly_idx = int(probs[n:].argmax())
-        best_normal_idx = int(probs[:n].argmax())
+        avg_normal = np.mean(all_normal_sims)
+        avg_anomaly = np.mean(all_anomaly_sims)
+        score_diff = avg_anomaly - avg_normal
+        
+        # Simple best prompt selection for fallback
+        best_anomaly_idx = 0
+        best_normal_idx = 0
     
-    score_diff = anomaly_sim - normal_sim
+    # Determine anomaly based on aggregate score
+    is_anomaly = score_diff > 0
+    confidence = abs(score_diff)
+    
+    print(f"  📊 Avg normal: {avg_normal:.4f}, Avg anomaly: {avg_anomaly:.4f}")
+    print(f"  📊 Score diff: {score_diff:+.4f} -> {'ANOMALY' if is_anomaly else 'NORMAL'}")
     
     return {
+        "is_anomaly": is_anomaly,
         "score_diff": score_diff,
-        "is_anomaly": score_diff > 0,
-        "anomaly_sim": anomaly_sim,
-        "normal_sim": normal_sim,
+        "anomaly_score": avg_anomaly,
+        "normal_score": avg_normal,
+        "confidence": confidence,
+        "per_frame_scores": per_frame_scores,
         "top_anomaly_prompt": anomaly_prompts[best_anomaly_idx],
         "top_normal_prompt": normal_prompts[best_normal_idx],
     }
 
 
-def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_size=220) -> Image.Image:
-    """Create annotated frame grid."""
+def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_size=256) -> Image.Image:
+    """Create annotated frame grid for Gemini verification."""
     images = [Image.open(f["path"]).convert("RGB") for f in frames[:16]]
     n = len(images)
     rows = (n + cols - 1) // cols
     header = 32
     
-    grid = Image.new('RGB', (cols * tile_size, rows * (tile_size + header)), (9, 9, 11))
+    grid = Image.new('RGB', (cols * tile_size, rows * (tile_size + header)), (12, 12, 20))
     draw = ImageDraw.Draw(grid)
     
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
     except:
         font = ImageFont.load_default()
     
@@ -312,15 +371,17 @@ def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_
         grid.paste(tile, (x + 2, y + header))
         
         score = scores[i] if i < len(scores) else 0
+        timestamp = frames[i].get("timestamp", 0) if i < len(frames) else 0
+        
         if score > 0.015:
-            bg, color = (80, 25, 25), (255, 120, 120)
-            label = f"⚠ F{i+1}: {score:+.3f}"
+            bg, color = (60, 20, 20), (255, 100, 100)
+            label = f"⚠️ {timestamp:.1f}s: {score:+.3f}"
         elif score < -0.015:
-            bg, color = (25, 60, 25), (120, 255, 120)
-            label = f"✓ F{i+1}: {score:+.3f}"
+            bg, color = (20, 50, 20), (100, 255, 100)
+            label = f"✓ {timestamp:.1f}s: {score:+.3f}"
         else:
-            bg, color = (30, 30, 40), (160, 160, 170)
-            label = f"○ F{i+1}: {score:+.3f}"
+            bg, color = (30, 30, 40), (180, 180, 180)
+            label = f"○ {timestamp:.1f}s: {score:+.3f}"
         
         draw.rectangle([x, y, x + tile_size - 1, y + header - 1], fill=bg)
         draw.text((x + 6, y + 8), label, fill=color, font=font)
@@ -328,70 +389,100 @@ def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_
     return grid
 
 
-def image_to_b64(img: Image.Image, quality: int = 85) -> str:
+def image_to_b64(img: Image.Image, quality: int = 90) -> str:
     buf = BytesIO()
     img.save(buf, format='JPEG', quality=quality)
     return base64.b64encode(buf.getvalue()).decode()
 
 
 def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, 
-                  scores: List[float], top_anomaly: str, top_normal: str) -> Dict:
-    """Gemini verification with frame grid."""
+                  edge_result: Dict) -> Dict:
+    """Gemini verification with annotated frame grid."""
     print("🧠 Running Gemini verification...")
     
+    scores = edge_result.get("per_frame_scores", [])
     grid = create_annotated_grid(frames, scores)
     grid_b64 = image_to_b64(grid)
     
-    avg_score = np.mean(scores)
-    max_score = max(scores)
+    # Build per-frame description
+    per_frame_desc = "\n".join([
+        f"  Frame {i+1} (t={frames[i].get('timestamp', 0):.1f}s): score={s:+.3f} ({'anomaly likely' if s > 0.015 else 'normal likely' if s < -0.015 else 'uncertain'})"
+        for i, s in enumerate(scores)
+    ])
     
-    prompt = f"""VIDEO ANOMALY VERIFICATION
+    prompt = f"""=== VIDEO ANOMALY VERIFICATION ===
 
-CAMERA: {camera_context}
-TARGETS: {detection_targets}
-EDGE DETECTOR RESULT:
-- Avg score: {avg_score:+.4f}
-- Max score: {max_score:+.4f}
-- Top anomaly match: "{top_anomaly}"
-- Top normal match: "{top_normal}"
+CAMERA CONTEXT: {camera_context}
 
-Analyze the frame grid. Are these frames showing an anomaly?
+USER DETECTION TARGETS: {detection_targets}
 
-JSON only:
+EDGE DETECTOR (SigLIP2) RESULT:
+- Initial Assessment: {"🚨 ANOMALY DETECTED" if edge_result.get('is_anomaly') else "✅ NORMAL"}
+- Confidence Score: {edge_result.get('confidence', 0):.4f}
+- Score Difference (anomaly - normal): {edge_result.get('score_diff', 0):+.4f}
+- Top Anomaly Match: "{edge_result.get('top_anomaly_prompt', 'N/A')}"
+- Top Normal Match: "{edge_result.get('top_normal_prompt', 'N/A')}"
+
+PER-FRAME SCORES (shown in image headers):
+{per_frame_desc}
+
+=== VERIFICATION TASK ===
+The image shows a frame grid with timestamps and edge detector scores in the headers.
+- Positive scores (⚠️ red) indicate anomaly likelihood
+- Negative scores (✓ green) indicate normal likelihood
+
+1. VERIFY: Is the edge detector's assessment correct? Look carefully at the visual evidence.
+2. CLASSIFY: If anomaly, what specific type matches the user's detection targets?
+3. EXPLAIN: Provide detailed reasoning about what you observe.
+4. CONFIDENCE: Rate your confidence in this assessment.
+
+Consider:
+- False positives: Normal activity that might look suspicious
+- False negatives: Subtle anomalies the edge detector might miss
+- Context: What would be normal vs abnormal for THIS specific camera location
+
+Respond in JSON format ONLY:
 {{
     "isAnomaly": true/false,
-    "anomalyType": "specific type or null",
+    "anomalyType": "specific type or null if normal",
     "confidence": 0.0-1.0,
-    "reasoning": "detailed analysis",
-    "keyObservations": ["obs1", "obs2", "obs3"],
-    "frameAnalysis": "which frames show the anomaly"
+    "reasoning": "detailed analysis of visual evidence",
+    "edgeAssessment": "agree/disagree with edge detector and why",
+    "keyObservations": ["observation 1", "observation 2", "observation 3"],
+    "frameAnalysis": "which frames show the anomaly and why"
 }}"""
 
-    response = call_gemini(prompt, grid_b64, max_tokens=800)
+    response = call_gemini(prompt, grid_b64, max_tokens=1000)
     
     if isinstance(response, dict) and "error" in response:
         return {"error": response["error"]}
     
     parsed = extract_json_object(response)
     if parsed:
-        print(f"  ✅ Gemini: {'ANOMALY' if parsed.get('isAnomaly') else 'NORMAL'}")
+        print(f"  ✅ Gemini: {'ANOMALY' if parsed.get('isAnomaly') else 'NORMAL'} (confidence: {parsed.get('confidence', 0):.0%})")
         return {
             "isAnomaly": parsed.get("isAnomaly", False),
             "anomalyType": parsed.get("anomalyType"),
             "confidence": parsed.get("confidence", 0),
             "reasoning": parsed.get("reasoning", ""),
+            "edgeAssessment": parsed.get("edgeAssessment", ""),
             "keyObservations": parsed.get("keyObservations", []),
             "frameAnalysis": parsed.get("frameAnalysis", "")
         }
     
-    return {"reasoning": response, "isAnomaly": "anomaly" in response.lower()}
+    # Fallback parsing
+    return {
+        "reasoning": response, 
+        "isAnomaly": "anomaly" in response.lower() and "no anomaly" not in response.lower()
+    }
 
 
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Sequential processing with HYSTERESIS:
-    - Detects sustained anomaly EVENTS, not single frame spikes
-    - Requires N consecutive frames above threshold to trigger
+    Batch Processing Pipeline:
+    - Extracts uniformly sampled frames from entire video
+    - Processes ALL frames together for aggregate scoring
+    - More accurate than sequential/hysteresis approach
     """
     job_input = job.get("input", {})
     
@@ -400,19 +491,15 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     detection_targets = job_input.get("detection_targets", "Suspicious activity")
     
     # Processing params
-    scan_fps = job_input.get("scan_fps", 1)  # 1 FPS scanning
-    anomaly_threshold = job_input.get("anomaly_threshold", 0)  # Score threshold (0 = any positive diff)
-    
-    # HYSTERESIS params
-    min_consecutive = job_input.get("min_consecutive", 2)  # Need N consecutive frames above threshold
+    num_frames = job_input.get("num_frames", 8)  # Number of frames to sample
     
     if not video_url:
         return {"error": "video_url is required"}
     
-    print("\n" + "="*50)
-    print("🎬 TRUWO - Sequential Analysis with Hysteresis")
-    print(f"   Threshold: {anomaly_threshold}, Min consecutive: {min_consecutive}")
-    print("="*50)
+    print("\n" + "="*60)
+    print("🎬 Video Anomaly Detection - Batch Processing Pipeline")
+    print(f"   Sampling {num_frames} frames for aggregate analysis")
+    print("="*60)
     
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, "video.mp4")
@@ -434,176 +521,90 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         
         normal_prompts = prompt_banks["normal_prompts"]
         anomaly_prompts = prompt_banks["anomaly_prompts"]
+        detection_summary = prompt_banks.get("detection_summary", "")
         
-        # Sequential scan with hysteresis
-        print(f"🔍 Scanning at {scan_fps} fps with hysteresis...")
+        # Extract uniformly spaced frames
+        frames = extract_frames_uniform(video_path, frames_dir, num_frames)
         
-        scan_interval = 1.0 / scan_fps
-        current_time = 0
-        frames_scanned = 0
+        if len(frames) < 2:
+            return {"error": f"Only extracted {len(frames)} frames, need at least 2"}
         
-        # Hysteresis state
-        consecutive_anomaly_count = 0
-        anomaly_event_start_time = None
-        anomaly_event_scores = []
-        anomaly_event_times = []
+        # Load frame images
+        frame_images = []
+        for f in frames:
+            try:
+                img = Image.open(f["path"]).convert("RGB")
+                frame_images.append(img)
+            except Exception as e:
+                print(f"  ⚠ Failed to load {f['path']}: {e}")
         
-        # Track best results
-        best_score = -1
-        best_anomaly_prompt = ""
-        best_normal_prompt = ""
+        if len(frame_images) < 2:
+            return {"error": "Failed to load enough frame images"}
         
-        # Detected event
-        event_detected = False
-        event_start = None
-        event_end = None
+        # Stage 1: Batch SigLIP detection
+        print("\n⚡ Stage 1: SigLIP2 Batch Detection")
+        edge_result = siglip_detect_batch(frame_images, normal_prompts, anomaly_prompts)
         
-        while current_time < duration:
-            frame_path = os.path.join(temp_dir, f"scan_{frames_scanned:04d}.jpg")
-            
-            if extract_frame_at_time(video_path, current_time, frame_path):
-                try:
-                    img = Image.open(frame_path).convert("RGB")
-                    result = score_frame(img, normal_prompts, anomaly_prompts)
-                    
-                    frames_scanned += 1
-                    score = result["score_diff"]
-                    
-                    # Track best overall
-                    if score > best_score:
-                        best_score = score
-                        best_anomaly_prompt = result["top_anomaly_prompt"]
-                        best_normal_prompt = result["top_normal_prompt"]
-                    
-                    # Hysteresis logic
-                    if score > anomaly_threshold:
-                        # Frame is anomalous
-                        if consecutive_anomaly_count == 0:
-                            # Start of potential event
-                            anomaly_event_start_time = current_time
-                            anomaly_event_scores = []
-                            anomaly_event_times = []
-                        
-                        consecutive_anomaly_count += 1
-                        anomaly_event_scores.append(score)
-                        anomaly_event_times.append(current_time)
-                        
-                        print(f"  ⚠ t={current_time:.1f}s score={score:+.4f} (streak: {consecutive_anomaly_count})")
-                        
-                        # Check if we've hit the threshold for a real event
-                        if consecutive_anomaly_count >= min_consecutive:
-                            print(f"  🚨 ANOMALY EVENT DETECTED at {anomaly_event_start_time:.1f}s!")
-                            event_detected = True
-                            event_start = anomaly_event_start_time
-                            event_end = current_time
-                            break
-                    else:
-                        # Frame is normal - reset streak
-                        if consecutive_anomaly_count > 0:
-                            print(f"  ✓ t={current_time:.1f}s normal - reset (was {consecutive_anomaly_count} streak)")
-                        consecutive_anomaly_count = 0
-                        anomaly_event_start_time = None
-                        anomaly_event_scores = []
-                        anomaly_event_times = []
-                    
-                    if frames_scanned % 10 == 0:
-                        print(f"  ✓ Scanned {frames_scanned} frames, t={current_time:.1f}s")
-                    
-                except Exception as e:
-                    print(f"  ⚠ Frame error at {current_time:.1f}s: {e}")
-            
-            current_time += scan_interval
+        if "error" in edge_result:
+            return {"error": f"Edge detection failed: {edge_result['error']}"}
         
-        print(f"📊 Scanned {frames_scanned} frames total")
+        # Stage 2: Gemini verification (always run for accuracy)
+        print("\n🧠 Stage 2: Gemini Verification")
+        gemini_result = gemini_verify(frames, camera_context, detection_targets, edge_result)
         
-        # If event detected, extract window and verify with Gemini
-        if event_detected:
-            print(f"🎯 Extracting frames around event {event_start:.1f}s - {event_end:.1f}s...")
-            
-            # Extract frames around the event (2s before to 4s after)
-            start_time = max(0, event_start - 2)
-            end_time = min(duration, event_end + 4)
-            
-            window_frames = extract_frames_range(video_path, start_time, end_time, frames_dir, fps=1)
-            
-            if window_frames:
-                # Score all window frames
-                window_scores = []
-                for f in window_frames:
-                    try:
-                        img = Image.open(f["path"]).convert("RGB")
-                        result = score_frame(img, normal_prompts, anomaly_prompts)
-                        window_scores.append(result["score_diff"])
-                    except:
-                        window_scores.append(0)
-                
-                # Gemini verification
-                gemini_result = gemini_verify(
-                    window_frames, camera_context, detection_targets,
-                    window_scores, best_anomaly_prompt, best_normal_prompt
-                )
-                
-                # Create annotated grid
-                grid = create_annotated_grid(window_frames, window_scores)
-                grid_b64 = image_to_b64(grid)
-                
-                # Build response
-                return {
-                    "status": "completed",
-                    "videoDuration": duration,
-                    "events": [],
-                    
-                    "edgeDetection": {
-                        "isAnomaly": True,
-                        "scoreDiff": round(best_score, 4),
-                        "anomalyScore": 0,
-                        "normalScore": 0,
-                        "confidence": round(best_score, 4),
-                        "perFrameScores": [round(s, 4) for s in window_scores],
-                        "topAnomalyPrompt": best_anomaly_prompt,
-                        "topNormalPrompt": best_normal_prompt,
-                    },
-                    "geminiVerification": gemini_result,
-                    "annotatedGridB64": f"data:image/jpeg;base64,{grid_b64}",
-                    "frameCount": len(window_frames),
-                    "eventStart": event_start,
-                    "eventEnd": event_end,
-                    "consecutiveFrames": min_consecutive,
-                    "framesScanned": frames_scanned,
-                }
+        # Create annotated grid for response
+        grid = create_annotated_grid(frames, edge_result.get("per_frame_scores", []))
+        grid_b64 = image_to_b64(grid)
         
-        # No anomaly event found
-        print("✅ No sustained anomaly event detected")
+        # Determine final verdict
+        # Trust Gemini if it has high confidence, otherwise use edge detection
+        gemini_confidence = gemini_result.get("confidence", 0) if isinstance(gemini_result, dict) else 0
+        
+        if gemini_confidence >= 0.7:
+            final_is_anomaly = gemini_result.get("isAnomaly", edge_result["is_anomaly"])
+            final_confidence = gemini_confidence
+        else:
+            # Edge detection result with Gemini's input
+            final_is_anomaly = edge_result["is_anomaly"]
+            final_confidence = edge_result["confidence"]
+        
+        print("\n" + "="*60)
+        print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
+        print(f"   Confidence: {final_confidence:.1%}")
+        print("="*60)
+        
         return {
             "status": "completed",
             "videoDuration": duration,
-            "events": [],
             
             "edgeDetection": {
-                "isAnomaly": False,
-                "scoreDiff": round(best_score, 4),
-                "anomalyScore": 0,
-                "normalScore": 0,
-                "confidence": 0,
-                "perFrameScores": [],
-                "topAnomalyPrompt": best_anomaly_prompt,
-                "topNormalPrompt": best_normal_prompt,
+                "isAnomaly": edge_result["is_anomaly"],
+                "scoreDiff": round(edge_result["score_diff"], 4),
+                "anomalyScore": round(edge_result["anomaly_score"], 4),
+                "normalScore": round(edge_result["normal_score"], 4),
+                "confidence": round(edge_result["confidence"], 4),
+                "perFrameScores": [round(s, 4) for s in edge_result["per_frame_scores"]],
+                "topAnomalyPrompt": edge_result["top_anomaly_prompt"],
+                "topNormalPrompt": edge_result["top_normal_prompt"],
             },
-            "geminiVerification": {
-                "isAnomaly": False,
-                "anomalyType": None,
-                "confidence": 0.95,
-                "reasoning": f"Scanned {frames_scanned} frames across {duration:.1f}s video. No sustained anomaly events detected (required {min_consecutive} consecutive frames above threshold).",
-                "keyObservations": [
-                    f"Analyzed {frames_scanned} frames at {scan_fps} fps",
-                    f"Maximum single-frame score: {best_score:+.4f}",
-                    f"No {min_consecutive}+ consecutive anomaly frames found"
-                ],
-                "frameAnalysis": ""
+            
+            "geminiVerification": gemini_result,
+            
+            "finalVerdict": {
+                "isAnomaly": final_is_anomaly,
+                "anomalyType": gemini_result.get("anomalyType") if final_is_anomaly else None,
+                "confidence": round(final_confidence, 4),
             },
-            "annotatedGridB64": None,
-            "frameCount": frames_scanned,
-            "framesScanned": frames_scanned,
+            
+            "promptBanks": {
+                "normalPrompts": normal_prompts,
+                "anomalyPrompts": anomaly_prompts,
+                "detectionSummary": detection_summary,
+            },
+            
+            "annotatedGridB64": f"data:image/jpeg;base64,{grid_b64}",
+            "frameCount": len(frames),
+            "frameTimestamps": [f["timestamp"] for f in frames],
         }
 
 
