@@ -2,12 +2,11 @@
 """
 RunPod Serverless Handler - Video Security Analysis
 ====================================================
-Sequential Processing: Analyze frames until first anomaly detected
+Sequential Processing with Hysteresis: Detect sustained anomaly events
 """
 
 import os
 import json
-import uuid
 import base64
 import tempfile
 import subprocess
@@ -215,7 +214,7 @@ def extract_frame_at_time(video_path: str, timestamp: float, output_path: str) -
         return False
 
 
-def extract_frames_range(video_path: str, start_time: float, end_time: float, output_dir: str, fps: float = 2) -> List[Dict]:
+def extract_frames_range(video_path: str, start_time: float, end_time: float, output_dir: str, fps: float = 1) -> List[Dict]:
     """Extract frames from a time range."""
     output_pattern = os.path.join(output_dir, "frame_%04d.jpg")
     duration = end_time - start_time
@@ -390,7 +389,9 @@ JSON only:
 
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Sequential processing: scan video until first anomaly detected.
+    Sequential processing with HYSTERESIS:
+    - Detects sustained anomaly EVENTS, not single frame spikes
+    - Requires N consecutive frames above threshold to trigger
     """
     job_input = job.get("input", {})
     
@@ -400,14 +401,17 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     
     # Processing params
     scan_fps = job_input.get("scan_fps", 1)  # 1 FPS scanning
-    window_size = job_input.get("window_size", 8)  # Frames to analyze when anomaly found
     anomaly_threshold = job_input.get("anomaly_threshold", 0.01)  # Score threshold
+    
+    # HYSTERESIS params
+    min_consecutive = job_input.get("min_consecutive", 2)  # Need N consecutive frames above threshold
     
     if not video_url:
         return {"error": "video_url is required"}
     
     print("\n" + "="*50)
-    print("🎬 TRUWO - Sequential Analysis")
+    print("🎬 TRUWO - Sequential Analysis with Hysteresis")
+    print(f"   Threshold: {anomaly_threshold}, Min consecutive: {min_consecutive}")
     print("="*50)
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -431,18 +435,28 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         normal_prompts = prompt_banks["normal_prompts"]
         anomaly_prompts = prompt_banks["anomaly_prompts"]
         
-        # Sequential scan
-        print(f"🔍 Scanning at {scan_fps} fps...")
-        
-        anomaly_found = False
-        anomaly_time = None
-        best_score = -1
-        best_anomaly_prompt = ""
-        best_normal_prompt = ""
+        # Sequential scan with hysteresis
+        print(f"🔍 Scanning at {scan_fps} fps with hysteresis...")
         
         scan_interval = 1.0 / scan_fps
         current_time = 0
         frames_scanned = 0
+        
+        # Hysteresis state
+        consecutive_anomaly_count = 0
+        anomaly_event_start_time = None
+        anomaly_event_scores = []
+        anomaly_event_times = []
+        
+        # Track best results
+        best_score = -1
+        best_anomaly_prompt = ""
+        best_normal_prompt = ""
+        
+        # Detected event
+        event_detected = False
+        event_start = None
+        event_end = None
         
         while current_time < duration:
             frame_path = os.path.join(temp_dir, f"scan_{frames_scanned:04d}.jpg")
@@ -453,18 +467,44 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                     result = score_frame(img, normal_prompts, anomaly_prompts)
                     
                     frames_scanned += 1
+                    score = result["score_diff"]
                     
-                    if result["score_diff"] > best_score:
-                        best_score = result["score_diff"]
+                    # Track best overall
+                    if score > best_score:
+                        best_score = score
                         best_anomaly_prompt = result["top_anomaly_prompt"]
                         best_normal_prompt = result["top_normal_prompt"]
                     
-                    # Check if anomaly threshold exceeded
-                    if result["score_diff"] > anomaly_threshold:
-                        print(f"  🚨 Anomaly at {current_time:.1f}s (score: {result['score_diff']:+.4f})")
-                        anomaly_found = True
-                        anomaly_time = current_time
-                        break
+                    # Hysteresis logic
+                    if score > anomaly_threshold:
+                        # Frame is anomalous
+                        if consecutive_anomaly_count == 0:
+                            # Start of potential event
+                            anomaly_event_start_time = current_time
+                            anomaly_event_scores = []
+                            anomaly_event_times = []
+                        
+                        consecutive_anomaly_count += 1
+                        anomaly_event_scores.append(score)
+                        anomaly_event_times.append(current_time)
+                        
+                        print(f"  ⚠ t={current_time:.1f}s score={score:+.4f} (streak: {consecutive_anomaly_count})")
+                        
+                        # Check if we've hit the threshold for a real event
+                        if consecutive_anomaly_count >= min_consecutive:
+                            print(f"  🚨 ANOMALY EVENT DETECTED at {anomaly_event_start_time:.1f}s!")
+                            event_detected = True
+                            event_start = anomaly_event_start_time
+                            event_end = current_time
+                            break
+                    else:
+                        # Frame is normal - reset streak
+                        if consecutive_anomaly_count > 0:
+                            print(f"  ✓ t={current_time:.1f}s normal - reset (was {consecutive_anomaly_count} streak)")
+                        consecutive_anomaly_count = 0
+                        anomaly_event_start_time = None
+                        anomaly_event_scores = []
+                        anomaly_event_times = []
                     
                     if frames_scanned % 10 == 0:
                         print(f"  ✓ Scanned {frames_scanned} frames, t={current_time:.1f}s")
@@ -476,13 +516,13 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         
         print(f"📊 Scanned {frames_scanned} frames total")
         
-        # If anomaly found, extract window and verify with Gemini
-        if anomaly_found:
-            print(f"🎯 Extracting frames around anomaly at {anomaly_time:.1f}s...")
+        # If event detected, extract window and verify with Gemini
+        if event_detected:
+            print(f"🎯 Extracting frames around event {event_start:.1f}s - {event_end:.1f}s...")
             
-            # Extract frames around anomaly
-            start_time = max(0, anomaly_time - 2)
-            end_time = min(duration, anomaly_time + 6)
+            # Extract frames around the event (2s before to 4s after)
+            start_time = max(0, event_start - 2)
+            end_time = min(duration, event_end + 4)
             
             window_frames = extract_frames_range(video_path, start_time, end_time, frames_dir, fps=1)
             
@@ -526,12 +566,14 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                     "geminiVerification": gemini_result,
                     "annotatedGridB64": f"data:image/jpeg;base64,{grid_b64}",
                     "frameCount": len(window_frames),
-                    "anomalyTimestamp": anomaly_time,
+                    "eventStart": event_start,
+                    "eventEnd": event_end,
+                    "consecutiveFrames": min_consecutive,
                     "framesScanned": frames_scanned,
                 }
         
-        # No anomaly found
-        print("✅ No anomaly detected")
+        # No anomaly event found
+        print("✅ No sustained anomaly event detected")
         return {
             "status": "completed",
             "videoDuration": duration,
@@ -551,11 +593,11 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                 "isAnomaly": False,
                 "anomalyType": None,
                 "confidence": 0.95,
-                "reasoning": f"Scanned {frames_scanned} frames across {duration:.1f}s video. No anomalies exceeding threshold detected. Video appears normal.",
+                "reasoning": f"Scanned {frames_scanned} frames across {duration:.1f}s video. No sustained anomaly events detected (required {min_consecutive} consecutive frames above threshold).",
                 "keyObservations": [
                     f"Analyzed {frames_scanned} frames at {scan_fps} fps",
-                    f"Maximum anomaly score: {best_score:+.4f}",
-                    "No frames exceeded anomaly threshold"
+                    f"Maximum single-frame score: {best_score:+.4f}",
+                    f"No {min_consecutive}+ consecutive anomaly frames found"
                 ],
                 "frameAnalysis": ""
             },
