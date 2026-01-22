@@ -2,7 +2,7 @@
 """
 RunPod Serverless Handler - Video Security Analysis
 ====================================================
-Batch Processing Pipeline: More accurate aggregate scoring across all frames
+Visual Context Pipeline: Uses reference frame for targeted prompt generation
 """
 
 import os
@@ -11,7 +11,7 @@ import base64
 import tempfile
 import subprocess
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 from io import BytesIO
 
@@ -129,13 +129,113 @@ def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> s
     return {"error": "Failed after 3 attempts"}
 
 
-def generate_prompt_banks(camera_context: str, detection_targets: str) -> tuple:
-    """Generate normal/anomaly prompts using Gemini - HYPERFOCUSED on detection targets."""
+def image_to_b64(img: Image.Image, quality: int = 90) -> str:
+    """Convert PIL Image to base64 string."""
+    buf = BytesIO()
+    img.save(buf, format='JPEG', quality=quality)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def extract_reference_frame(video_path: str, position: float = 0.20) -> Optional[Image.Image]:
+    """
+    Extract a single reference frame from the video at given position (0.0-1.0).
+    Default is 20% into the video - early enough for normal scene but not the first frame.
+    """
+    print(f"📸 Extracting reference frame at {position:.0%} of video...")
+    try:
+        # Get video duration
+        probe = subprocess.check_output([
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", video_path
+        ]).decode().strip()
+        duration = float(probe)
+        
+        # Calculate timestamp
+        timestamp = duration * position
+        
+        # Extract single frame to temp file
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+        
+        subprocess.run([
+            "ffmpeg", "-ss", str(timestamp), "-i", video_path,
+            "-vframes", "1", "-q:v", "2", tmp_path, "-y"
+        ], capture_output=True, check=True)
+        
+        # Load and return as PIL Image
+        img = Image.open(tmp_path).convert("RGB")
+        os.unlink(tmp_path)  # Clean up temp file
+        print(f"  ✅ Reference frame: {img.size[0]}x{img.size[1]} at t={timestamp:.1f}s")
+        return img
+    except Exception as e:
+        print(f"  ⚠️ Failed to extract reference frame: {e}")
+        return None
+
+
+def generate_prompt_banks(camera_context: str, detection_targets: str, 
+                          reference_frame: Optional[Image.Image] = None) -> tuple:
+    """
+    Generate normal/anomaly prompts using Gemini.
+    If reference_frame is provided, Gemini analyzes the ACTUAL scene for targeted prompts.
+    """
     print("🤖 Generating prompt banks...")
     print(f"   Scene: {camera_context[:50]}...")
     print(f"   Targets: {detection_targets[:50]}...")
     
-    prompt = f"""You are an expert in video anomaly detection. Generate HIGHLY SPECIFIC prompt banks.
+    if reference_frame is not None:
+        # ========== VISUAL CONTEXT MODE ==========
+        print("   📸 Using reference frame for visual context")
+        
+        img_b64 = image_to_b64(reference_frame)
+        
+        prompt = f"""You are an expert in video anomaly detection. I'm showing you a REFERENCE FRAME from the actual video feed.
+
+=== REFERENCE FRAME (ATTACHED IMAGE) ===
+Study this image carefully:
+- What objects, furniture, structures, or equipment are visible?
+- What is the camera angle and perspective?
+- What is the lighting condition?
+- What area/space is being monitored?
+
+=== USER-PROVIDED CONTEXT ===
+Camera description: {camera_context}
+Detection target: {detection_targets}
+
+=== YOUR TASK ===
+Generate HIGHLY SPECIFIC prompt banks for THIS EXACT scene to detect "{detection_targets}".
+
+**ANOMALY PROMPTS (20 prompts)** - Describe what "{detection_targets}" would LOOK LIKE in THIS specific scene:
+- Use the ACTUAL objects/locations visible in the reference frame
+- Describe body positions, movements, interactions specific to THIS environment
+- What would be visually different if "{detection_targets}" was happening HERE?
+- Include before/during/after visual indicators
+- Be EXTREMELY specific to what you SEE in the image
+
+**NORMAL PROMPTS (15 prompts)** - Describe NORMAL activity in THIS exact scene:
+- Reference the ACTUAL objects, furniture, and layout you see
+- What does routine activity look like in THIS specific location?
+- Describe people/objects in their expected positions for THIS scene
+- What does THIS scene look like when NOTHING abnormal is happening?
+
+=== FORMAT REQUIREMENTS ===
+- Each prompt: 5-15 words, visually descriptive
+- Reference SPECIFIC elements you see in the image (e.g., "near the counter", "by the door")
+- Focus on what a SINGLE FRAME would show
+- Use concrete visual descriptions, not abstract concepts
+
+JSON ONLY (no markdown):
+{{
+    "normal_prompts": ["visual description using actual scene elements", ...],
+    "anomaly_prompts": ["visual description of {detection_targets} in this scene", ...],
+    "scene_analysis": "Brief description of what you observe in the reference frame",
+    "detection_summary": "System detects {detection_targets} in this specific location"
+}}"""
+        
+        response = call_gemini(prompt, image_b64=img_b64, max_tokens=2500)
+        
+    else:
+        # ========== TEXT-ONLY MODE (fallback) ==========
+        prompt = f"""You are an expert in video anomaly detection. Generate HIGHLY SPECIFIC prompt banks.
 
 === SCENE CONTEXT ===
 {camera_context}
@@ -172,8 +272,8 @@ JSON ONLY (no markdown):
     "anomaly_prompts": ["visual description of {detection_targets} 1", ...],
     "detection_summary": "System detects {detection_targets} in {camera_context}"
 }}"""
-
-    response = call_gemini(prompt, max_tokens=2000)
+        
+        response = call_gemini(prompt, max_tokens=2000)
     
     if isinstance(response, dict) and "error" in response:
         return None, f"Error: {response['error']}"
@@ -184,7 +284,11 @@ JSON ONLY (no markdown):
         n_anomaly = len(parsed['anomaly_prompts'])
         print(f"  ✅ Generated {n_normal} normal, {n_anomaly} anomaly prompts")
         
-        # Log a few example prompts for debugging
+        # Log scene analysis if available (from visual context mode)
+        if parsed.get('scene_analysis'):
+            print(f"  🔍 Scene: {parsed['scene_analysis'][:80]}...")
+        
+        # Log example prompts
         if parsed['anomaly_prompts']:
             print(f"  📌 Anomaly examples: {parsed['anomaly_prompts'][:2]}")
         
@@ -263,13 +367,7 @@ def extract_frames_uniform(video_path: str, output_dir: str, num_frames: int = 8
 
 
 def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], anomaly_prompts: List[str]) -> Dict:
-    """
-    Batch SigLIP2 detection - process all frames together for better accuracy.
-    This is more accurate than sequential scoring because:
-    1. Batch normalization context across frames
-    2. Aggregate scoring is more robust to outliers
-    3. All frames contribute to the final decision
-    """
+    """Batch SigLIP2 detection - process all frames together for better accuracy."""
     model, preprocess, tokenizer = load_siglip()
     
     if not normal_prompts or not anomaly_prompts:
@@ -278,15 +376,12 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
     print(f"⚡ Batch scoring {len(frames)} frames...")
     
     if USE_OPEN_CLIP:
-        # Encode ALL images at once (batch processing)
         processed = torch.stack([preprocess(f) for f in frames]).to(DEVICE)
         
         with torch.no_grad():
-            # Batch encode images
             img_features = model.encode_image(processed)
             img_features = img_features / img_features.norm(dim=-1, keepdim=True)
             
-            # Encode prompts (only once, reused for all frames)
             normal_tokens = tokenizer(normal_prompts).to(DEVICE)
             anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
             
@@ -296,25 +391,18 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
             anomaly_features = model.encode_text(anomaly_tokens)
             anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
         
-        # Per-frame similarities (vectorized - much faster)
-        # Shape: [num_frames, num_prompts] -> max per frame -> [num_frames]
         normal_sim = (img_features @ normal_features.T).max(dim=1).values
         anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values
-        
-        # Per-frame score differences
         per_frame_scores = (anomaly_sim - normal_sim).cpu().numpy().tolist()
         
-        # Aggregate scores across ALL frames (key difference from hysteresis)
         avg_normal = normal_sim.mean().item()
         avg_anomaly = anomaly_sim.mean().item()
         score_diff = avg_anomaly - avg_normal
         
-        # Best matching prompts (averaged across frames)
         best_anomaly_idx = (img_features @ anomaly_features.T).mean(dim=0).argmax().item()
         best_normal_idx = (img_features @ normal_features.T).mean(dim=0).argmax().item()
         
     else:
-        # HuggingFace transformers fallback (batch processing)
         all_normal_sims = []
         all_anomaly_sims = []
         per_frame_scores = []
@@ -342,11 +430,9 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
         avg_anomaly = np.mean(all_anomaly_sims)
         score_diff = avg_anomaly - avg_normal
         
-        # Simple best prompt selection for fallback
         best_anomaly_idx = 0
         best_normal_idx = 0
     
-    # Determine anomaly based on aggregate score
     is_anomaly = score_diff > 0
     confidence = abs(score_diff)
     
@@ -407,10 +493,7 @@ def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_
 
 
 def create_gemini_grid(frames: List[Dict], cols=4) -> Image.Image:
-    """
-    Create CLEAN frame grid for Gemini (no annotations).
-    Simpler grid lets VLM focus on visual content without bias from scores.
-    """
+    """Create CLEAN frame grid for Gemini (no annotations)."""
     images = [Image.open(f["path"]).convert("RGB") for f in frames[:8]]
     n = len(images)
     rows = (n + cols - 1) // cols
@@ -427,35 +510,12 @@ def create_gemini_grid(frames: List[Dict], cols=4) -> Image.Image:
     return grid
 
 
-def image_to_b64(img: Image.Image, quality: int = 90) -> str:
-    buf = BytesIO()
-    img.save(buf, format='JPEG', quality=quality)
-    return base64.b64encode(buf.getvalue()).decode()
-
-
-def parse_anomaly_types(detection_targets: str) -> List[str]:
-    """Parse detection targets into structured anomaly types."""
-    types = []
-    for delim in [',', ';', '\n', '•', '-']:
-        if delim in detection_targets:
-            types = [t.strip() for t in detection_targets.split(delim) if t.strip()]
-            break
-    
-    if not types:
-        types = [detection_targets.strip()]
-    
-    return types
-
-
 def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, 
                   edge_result: Dict) -> Dict:
-    """
-    Gemini verification - HYPERFOCUSED on the specific detection target.
-    """
+    """Gemini verification - HYPERFOCUSED on the specific detection target."""
     print("🧠 Running Gemini verification...")
     print(f"   Looking for: {detection_targets}")
     
-    # Create CLEAN grid (no annotations - let Gemini see raw frames)
     grid = create_gemini_grid(frames)
     grid_b64 = image_to_b64(grid)
     
@@ -502,7 +562,6 @@ JSON ONLY:
             "reasoning": parsed.get("reasoning", ""),
         }
     
-    # Fallback parsing
     return {
         "reasoning": response, 
         "isAnomaly": "anomaly" in response.lower() and "no anomaly" not in response.lower()
@@ -511,26 +570,27 @@ JSON ONLY:
 
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Batch Processing Pipeline:
-    - Extracts uniformly sampled frames from entire video
-    - Processes ALL frames together for aggregate scoring
-    - More accurate than sequential/hysteresis approach
+    Visual Context Pipeline:
+    1. Download video
+    2. Extract reference frame at 20% for visual context
+    3. Generate prompts using Gemini with the actual scene image
+    4. Extract analysis frames and run SigLIP detection
+    5. Gemini verification
     """
     job_input = job.get("input", {})
     
     video_url = job_input.get("video_url")
     camera_context = job_input.get("camera_context", "Security camera")
     detection_targets = job_input.get("detection_targets", "Suspicious activity")
-    
-    # Processing params
-    num_frames = job_input.get("num_frames", 8)  # Number of frames to sample
+    num_frames = job_input.get("num_frames", 8)
     
     if not video_url:
         return {"error": "video_url is required"}
     
     print("\n" + "="*60)
-    print("🎬 Video Anomaly Detection - Batch Processing Pipeline")
-    print(f"   Sampling {num_frames} frames for aggregate analysis")
+    print("🎬 Video Anomaly Detection - Visual Context Pipeline")
+    print(f"   Scene: {camera_context[:40]}...")
+    print(f"   Target: {detection_targets[:40]}...")
     print("="*60)
     
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -538,24 +598,32 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         frames_dir = os.path.join(temp_dir, "frames")
         os.makedirs(frames_dir)
         
-        # Download video
+        # Step 1: Download video
         if not download_video(video_url, video_path):
             return {"error": "Download failed"}
         
-        # Get video info
+        # Step 2: Get video info
         duration, video_fps = get_video_info(video_path)
         print(f"📹 Video: {duration:.1f}s @ {video_fps:.1f}fps")
         
-        # Generate prompts
-        prompt_banks, error = generate_prompt_banks(camera_context, detection_targets)
+        # Step 3: Extract reference frame at 20% for visual context
+        reference_frame = extract_reference_frame(video_path, position=0.20)
+        
+        # Step 4: Generate prompts WITH visual context
+        prompt_banks, error = generate_prompt_banks(
+            camera_context, 
+            detection_targets, 
+            reference_frame  # Pass the actual frame!
+        )
         if error:
             return {"error": f"Prompt generation failed: {error}"}
         
         normal_prompts = prompt_banks["normal_prompts"]
         anomaly_prompts = prompt_banks["anomaly_prompts"]
         detection_summary = prompt_banks.get("detection_summary", "")
+        scene_analysis = prompt_banks.get("scene_analysis", "")
         
-        # Extract uniformly spaced frames
+        # Step 5: Extract analysis frames
         frames = extract_frames_uniform(video_path, frames_dir, num_frames)
         
         if len(frames) < 2:
@@ -573,30 +641,28 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         if len(frame_images) < 2:
             return {"error": "Failed to load enough frame images"}
         
-        # Stage 1: Batch SigLIP detection
+        # Step 6: SigLIP detection
         print("\n⚡ Stage 1: SigLIP2 Batch Detection")
         edge_result = siglip_detect_batch(frame_images, normal_prompts, anomaly_prompts)
         
         if "error" in edge_result:
             return {"error": f"Edge detection failed: {edge_result['error']}"}
         
-        # Stage 2: Gemini verification (always run for accuracy)
+        # Step 7: Gemini verification
         print("\n🧠 Stage 2: Gemini Verification")
         gemini_result = gemini_verify(frames, camera_context, detection_targets, edge_result)
         
-        # Create annotated grid for response (with scores for UI display)
+        # Create annotated grid for response
         annotated_grid = create_annotated_grid(frames, edge_result.get("per_frame_scores", []))
         grid_b64 = image_to_b64(annotated_grid)
         
         # Determine final verdict
-        # Trust Gemini if it has high confidence, otherwise use edge detection
         gemini_confidence = gemini_result.get("confidence", 0) if isinstance(gemini_result, dict) else 0
         
         if gemini_confidence >= 0.7:
             final_is_anomaly = gemini_result.get("isAnomaly", edge_result["is_anomaly"])
             final_confidence = gemini_confidence
         else:
-            # Edge detection result with Gemini's input
             final_is_anomaly = edge_result["is_anomaly"]
             final_confidence = edge_result["confidence"]
         
@@ -632,6 +698,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                 "normalPrompts": normal_prompts,
                 "anomalyPrompts": anomaly_prompts,
                 "detectionSummary": detection_summary,
+                "sceneAnalysis": scene_analysis,
             },
             
             "annotatedGridB64": f"data:image/jpeg;base64,{grid_b64}",
