@@ -1,13 +1,13 @@
 # RunPod Serverless Worker for Video Security Analysis
-# 2-Stage Pipeline: SigLIP2 Edge Detection + Gemini Verification
+# Sequential Processing: Scan until first anomaly
 
 FROM runpod/pytorch:2.2.0-py3.10-cuda12.1.1-devel-ubuntu22.04
 
-# Set working directory
 WORKDIR /app
 
-# Set cache directories EARLY so model downloads go to the right place
+# Set cache directories EARLY so all downloads go to /app/models
 ENV HF_HOME=/app/models
+ENV HF_HUB_CACHE=/app/models
 ENV TRANSFORMERS_CACHE=/app/models
 ENV TORCH_HOME=/app/models
 ENV XDG_CACHE_HOME=/app/models
@@ -27,19 +27,23 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download and cache SigLIP2 model (saves ~60s on cold start)
-# Model: ViT-SO400M-14-SigLIP-384 (~1.5GB)
+# Pre-download and cache SigLIP2 model AND tokenizer
+# This bakes everything into the image - no HF downloads at runtime
 RUN python -c "\
 import open_clip; \
-print('Downloading SigLIP2 model...'); \
+print('📦 Downloading SigLIP2 model...'); \
 model, _, preprocess = open_clip.create_model_and_transforms('ViT-SO400M-14-SigLIP-384', pretrained='webli'); \
-print('Model downloaded and cached!'); \
+print('📦 Downloading tokenizer...'); \
+tokenizer = open_clip.get_tokenizer('ViT-SO400M-14-SigLIP-384'); \
+print('✅ All models cached!'); \
 "
 
 # Copy handler
 COPY handler.py .
 
-# Runtime environment
+# Runtime: Force offline mode to use cached models only
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
 ENV PYTHONUNBUFFERED=1
 
 # RunPod serverless entrypoint
