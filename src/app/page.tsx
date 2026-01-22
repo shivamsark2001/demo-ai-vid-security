@@ -7,9 +7,8 @@ import { VideoUpload } from '@/components/VideoUpload';
 import { ContextInput } from '@/components/ContextInput';
 import { AnalysisProgress } from '@/components/AnalysisProgress';
 import { VideoPlayer, VideoPlayerRef } from '@/components/VideoPlayer';
-import { Timeline } from '@/components/Timeline';
 import { PipelineResults } from '@/components/PipelineResults';
-import { AnalysisStatus, AnalysisResult, TimelineEvent } from '@/types';
+import { AnalysisStatus, AnalysisResult } from '@/types';
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -20,8 +19,6 @@ export default function Home() {
   const [currentStep, setCurrentStep] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [videoDuration, setVideoDuration] = useState(0);
   
   const videoRef = useRef<VideoPlayerRef>(null);
 
@@ -194,11 +191,6 @@ export default function Home() {
     }
   };
 
-  const handleEventClick = (event: TimelineEvent) => {
-    videoRef.current?.seekTo(event.t0);
-    videoRef.current?.play();
-  };
-
   const isAnalyzing = status !== 'idle' && status !== 'completed' && status !== 'failed';
 
   return (
@@ -264,28 +256,11 @@ export default function Home() {
                 <VideoPlayer
                   ref={videoRef}
                   src={videoUrl}
-                  onTimeUpdate={setCurrentTime}
-                  onDurationChange={setVideoDuration}
                 />
               </div>
             )}
 
-            {/* Timeline */}
-            {result && result.events && result.events.length > 0 && (
-              <div className="glass-card p-4 animate-slide-up">
-                <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
-                  Event Timeline
-                </h3>
-                <Timeline
-                  events={result.events}
-                  duration={videoDuration}
-                  currentTime={currentTime}
-                  onEventClick={handleEventClick}
-                />
-              </div>
-            )}
-
-            {/* Pipeline Results */}
+            {/* Analysis Results */}
             {result && (
               <div className="animate-slide-up">
                 <PipelineResults result={result} />
