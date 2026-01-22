@@ -140,8 +140,10 @@ CAMERA: {camera_context}
 DETECT: {detection_targets}
 
 Generate text prompts for image matching:
-1. NORMAL: 15 descriptions of normal behavior
-2. ANOMALY: 15 descriptions of abnormal behavior
+1. NORMAL: 10 descriptions of normal behavior
+2. ANOMALY: 10 descriptions of abnormal behavior
+
+Keep them general so that they can be used for many videos.
 
 JSON only:
 {{
@@ -349,7 +351,6 @@ def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: st
 
 CAMERA: {camera_context}
 TARGETS: {detection_targets}
-
 EDGE DETECTOR RESULT:
 - Avg score: {avg_score:+.4f}
 - Max score: {max_score:+.4f}
