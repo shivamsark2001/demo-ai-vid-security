@@ -115,7 +115,7 @@ export function PipelineResults({ result }: PipelineResultsProps) {
               </span>
             </div>
             <div className="space-y-3">
-              {events.map((event, i) => (
+              {events.map((event: HysteresisEvent, i: number) => (
                 <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-[var(--bg-tertiary)]">
                   <div className="w-10 h-10 rounded-lg bg-[var(--accent-danger)]/20 flex items-center justify-center">
                     <AlertTriangle className="w-5 h-5 text-[var(--accent-danger)]" />
