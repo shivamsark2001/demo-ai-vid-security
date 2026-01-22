@@ -86,14 +86,26 @@ export function PipelineResults({ result }: PipelineResultsProps) {
           </div>
         </div>
 
-        {/* Key Observations */}
+        {/* Reasoning */}
+        {gemini.reasoning && (
+          <div className="p-5 border-t border-white/5">
+            <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
+              Analysis Reasoning
+            </h4>
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+              {gemini.reasoning}
+            </p>
+          </div>
+        )}
+
+        {/* Key Observations (if available) */}
         {gemini.keyObservations && gemini.keyObservations.length > 0 && (
-          <div className="p-5">
+          <div className="p-5 border-t border-white/5">
             <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
               Key Observations
             </h4>
             <ul className="space-y-2">
-              {gemini.keyObservations.map((obs, i) => (
+              {gemini.keyObservations.map((obs: string, i: number) => (
                 <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
                   <span className="text-[var(--accent-primary)] mt-0.5">•</span>
                   {obs}
