@@ -26,22 +26,9 @@ interface GeminiVerification {
   keyObservations?: string[];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface PipelineResultsProps {
-  result: {
-    mode?: string;
-    status?: string;
-    videoDuration?: number;
-    finalVerdict?: HysteresisVerdict;
-    events?: HysteresisEvent[];
-    geminiVerification?: GeminiVerification;
-    annotatedGridB64?: string;
-    frameCount?: number;
-    promptBanks?: {
-      anomalyPrompts?: string[];
-      normalPrompts?: string[];
-      sceneAnalysis?: string;
-    };
-  };
+  result: any;
 }
 
 function formatTime(seconds: number): string {
