@@ -263,8 +263,7 @@ export default function Home() {
               <Scan className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">Truwo</h1>
-              <p className="text-[11px] text-[var(--text-muted)]">Video intelligence</p>
+              <h1 className="text-xl font-semibold tracking-tight">Video Intelligence</h1>
             </div>
           </div>
         </header>
