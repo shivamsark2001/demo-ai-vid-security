@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const RUNPOD_API_KEY = process.env.RUNPOD_API_KEY;
-const RUNPOD_ENDPOINT_ID = process.env.RUNPOD_ENDPOINT_ID;
+// Self-hosted API via Cloudflare tunnel
+const API_URL = process.env.ANALYSIS_API_URL || 'https://explanation-argument-mono-produced.trycloudflare.com';
 
 export async function GET(request: NextRequest) {
   try {
-    if (!RUNPOD_API_KEY || !RUNPOD_ENDPOINT_ID) {
-      return NextResponse.json(
-        { error: 'RunPod configuration missing' },
-        { status: 500 }
-      );
-    }
-
     const { searchParams } = new URL(request.url);
     const jobId = searchParams.get('jobId');
 
@@ -22,20 +15,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check job status
-    const response = await fetch(
-      `https://api.runpod.ai/v2/${RUNPOD_ENDPOINT_ID}/status/${jobId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${RUNPOD_API_KEY}`,
-        },
-      }
-    );
+    // Poll job status from our API
+    const response = await fetch(`${API_URL}/job/${jobId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('RunPod status error:', errorText);
+      console.error('API status error:', errorText);
       return NextResponse.json(
         { error: 'Failed to get job status' },
         { status: response.status }
@@ -44,15 +34,31 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     
+    // Map API response to expected format
+    // API returns: { status, result?, error? }
+    // Frontend expects: { id, status, output, error, progress }
+    
+    let mappedStatus = data.status;
+    // Normalize status values
+    if (data.status === 'pending' || data.status === 'queued') {
+      mappedStatus = 'IN_QUEUE';
+    } else if (data.status === 'processing' || data.status === 'running') {
+      mappedStatus = 'IN_PROGRESS';
+    } else if (data.status === 'completed' || data.status === 'complete') {
+      mappedStatus = 'COMPLETED';
+    } else if (data.status === 'failed' || data.status === 'error') {
+      mappedStatus = 'FAILED';
+    }
+    
     return NextResponse.json({
-      id: data.id,
-      status: data.status,
-      output: data.output,
+      id: jobId,
+      status: mappedStatus,
+      output: data.result || data.output,
       error: data.error,
       progress: data.progress,
     });
   } catch (error) {
-    console.error('RunPod status error:', error);
+    console.error('API status error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
