@@ -130,45 +130,64 @@ def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> s
 
 
 def generate_prompt_banks(camera_context: str, detection_targets: str) -> tuple:
-    """Generate normal/anomaly prompts using Gemini."""
+    """Generate normal/anomaly prompts using Gemini - HYPERFOCUSED on detection targets."""
     print("🤖 Generating prompt banks...")
+    print(f"   Scene: {camera_context[:50]}...")
+    print(f"   Targets: {detection_targets[:50]}...")
     
-    prompt = f"""You are an expert in video anomaly detection systems. Generate prompt banks for a 2-stage detection pipeline.
+    prompt = f"""You are an expert in video anomaly detection. Generate HIGHLY SPECIFIC prompt banks.
 
-=== CAMERA CONTEXT ===
+=== SCENE CONTEXT ===
 {camera_context}
 
-=== WHAT USER WANTS TO DETECT ===
+=== DETECTION TARGET (FOCUS ON THIS) ===
 {detection_targets}
 
-=== YOUR TASK ===
-Generate two sets of text prompts optimized for CLIP/SigLIP image-text matching:
+=== CRITICAL INSTRUCTIONS ===
+Generate prompts that are LASER-FOCUSED on detecting "{detection_targets}" in a "{camera_context}" scene.
 
-1. **NORMAL PROMPTS**: 15-20 descriptions of normal, expected behavior in this camera's context
-2. **ANOMALY PROMPTS**: 15-20 descriptions of abnormal/suspicious behavior the user wants to detect
+**ANOMALY PROMPTS (20 prompts)** - These MUST describe visual signs of "{detection_targets}":
+- What does "{detection_targets}" LOOK LIKE in a single frame?
+- Body positions, hand movements, object interactions
+- Facial expressions, gestures, postures
+- Suspicious object placements or movements
+- Before/during/after visual indicators
+- Be EXTREMELY specific to "{detection_targets}"
 
-IMPORTANT: 
-- Each prompt should be a short, visual description (5-15 words)
-- Focus on what can be SEEN in a single frame
-- Be specific to the camera context provided
-- Normal prompts should capture typical activity
-- Anomaly prompts should describe visible signs of the target anomalies
+**NORMAL PROMPTS (15 prompts)** - Describe what NORMAL activity looks like in this scene:
+- Typical behavior for "{camera_context}"
+- Expected objects and their normal positions
+- Regular human activities and movements
+- What this scene looks like when "{detection_targets}" is NOT happening
 
-Respond in valid JSON format ONLY (no markdown, no explanation):
+=== FORMAT REQUIREMENTS ===
+- Each prompt: 5-15 words, visually descriptive
+- Focus on what a SINGLE FRAME would show
+- Use concrete visual descriptions, not abstract concepts
+- Anomaly prompts should make "{detection_targets}" easy to detect
+
+JSON ONLY (no markdown):
 {{
-    "normal_prompts": ["description 1", "description 2", ...],
-    "anomaly_prompts": ["description 1", "description 2", ...],
-    "detection_summary": "Brief summary of what the system will detect"
+    "normal_prompts": ["visual description 1", "visual description 2", ...],
+    "anomaly_prompts": ["visual description of {detection_targets} 1", ...],
+    "detection_summary": "System detects {detection_targets} in {camera_context}"
 }}"""
 
-    response = call_gemini(prompt, max_tokens=1500)
+    response = call_gemini(prompt, max_tokens=2000)
     
     if isinstance(response, dict) and "error" in response:
         return None, f"Error: {response['error']}"
     
     parsed = extract_json_object(response)
     if parsed and "normal_prompts" in parsed and "anomaly_prompts" in parsed:
-        print(f"  ✅ Generated {len(parsed['normal_prompts'])} normal, {len(parsed['anomaly_prompts'])} anomaly prompts")
+        n_normal = len(parsed['normal_prompts'])
+        n_anomaly = len(parsed['anomaly_prompts'])
+        print(f"  ✅ Generated {n_normal} normal, {n_anomaly} anomaly prompts")
+        
+        # Log a few example prompts for debugging
+        if parsed['anomaly_prompts']:
+            print(f"  📌 Anomaly examples: {parsed['anomaly_prompts'][:2]}")
+        
         return parsed, None
     
     return None, f"Parse failed"
@@ -431,53 +450,44 @@ def parse_anomaly_types(detection_targets: str) -> List[str]:
 def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, 
                   edge_result: Dict) -> Dict:
     """
-    Gemini verification with CLEAN frame grid.
-    Key improvements:
-    1. Clean grid without score annotations (no bias)
-    2. Structured anomaly types list
-    3. Clearer task description
+    Gemini verification - HYPERFOCUSED on the specific detection target.
     """
     print("🧠 Running Gemini verification...")
+    print(f"   Looking for: {detection_targets}")
     
     # Create CLEAN grid (no annotations - let Gemini see raw frames)
     grid = create_gemini_grid(frames)
     grid_b64 = image_to_b64(grid)
     
-    # Parse detection targets into structured types
-    anomaly_types = parse_anomaly_types(detection_targets)
-    anomaly_types_desc = "\n".join([f"• {atype}" for atype in anomaly_types])
-    
-    prompt = f"""=== VIDEO ANOMALY DETECTION ===
+    prompt = f"""=== FOCUSED VIDEO ANALYSIS ===
 
-CAMERA CONTEXT: {camera_context}
+**YOUR ONE JOB:** Determine if "{detection_targets}" is happening in these frames.
 
-EDGE DETECTOR (SigLIP2) RESULT:
-- Detected as: {"ANOMALY" if edge_result.get('is_anomaly') else "NORMAL"}
-- Confidence: {edge_result.get('confidence', 0):.3f}
-- Top matching prompt: "{edge_result.get('top_anomaly_prompt', 'N/A')}"
+SCENE: {camera_context}
+TARGET TO DETECT: {detection_targets}
 
-=== ANOMALY TYPES TO DETECT ===
-{anomaly_types_desc}
+EDGE DETECTOR HINT:
+- Result: {"ANOMALY LIKELY" if edge_result.get('is_anomaly') else "NORMAL LIKELY"}
+- Matched: "{edge_result.get('top_anomaly_prompt', 'N/A')}"
 
-=== TASK ===
-Analyze the 8-frame grid image above showing sequential video frames.
+=== ANALYZE THE 8-FRAME SEQUENCE ===
 
-1. Is this truly an ANOMALY or NORMAL activity?
-2. If anomaly, which specific type from the list above?
-3. Provide detailed reasoning about what you observe in the frames.
+Look at each frame carefully. Ask yourself:
+1. Do I see any visual evidence of "{detection_targets}"?
+2. What specific actions, objects, or behaviors indicate "{detection_targets}"?
+3. What would this scene look like if "{detection_targets}" was NOT happening?
 
-Consider what would be normal vs abnormal for this camera context.
-Look for: unusual behavior, objects out of place, dangerous situations, policy violations.
+BE SPECIFIC: Describe exactly what you see that indicates "{detection_targets}" OR why this is normal activity.
 
-Respond in JSON format ONLY:
+JSON ONLY:
 {{
     "isAnomaly": true/false,
-    "anomalyType": "specific type from list or null if normal",
+    "anomalyType": "{detection_targets}" or null,
     "confidence": 0.0-1.0,
-    "reasoning": "detailed analysis of what you observe in the frames"
+    "reasoning": "I see [specific visual evidence]. In frame X, [describe what you observe]. This indicates [detection_targets] because [explanation]."
 }}"""
 
-    response = call_gemini(prompt, grid_b64, max_tokens=600)
+    response = call_gemini(prompt, grid_b64, max_tokens=800)
     
     if isinstance(response, dict) and "error" in response:
         return {"error": response["error"]}
