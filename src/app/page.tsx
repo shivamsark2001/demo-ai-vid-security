@@ -153,6 +153,16 @@ export default function Home() {
       let useMock = false;
       let jobId = '';
 
+      // SAFEGUARD: Never send browser blob: URLs to backend
+      if (blobUrl.startsWith('blob:')) {
+        console.error('ERROR: Attempted to send browser blob URL to backend:', blobUrl);
+        setStatus('failed');
+        setCurrentStep('Upload error - please try again');
+        return;
+      }
+
+      console.log('Sending to RunPod:', { video_url: blobUrl.substring(0, 80) + '...' });
+
       try {
         const runpodResponse = await fetch('/api/runpod/run', {
           method: 'POST',

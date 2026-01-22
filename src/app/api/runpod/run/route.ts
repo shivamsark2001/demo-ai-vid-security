@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { video_url, context_text } = body;
+    const { video_url, camera_context, detection_targets } = body;
 
     if (!video_url) {
       return NextResponse.json(
@@ -21,6 +21,21 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // SAFEGUARD: Reject browser blob: URLs - these can't be downloaded by RunPod
+    if (video_url.startsWith('blob:')) {
+      console.error('Rejected blob: URL:', video_url);
+      return NextResponse.json(
+        { error: 'Invalid video URL - browser blob URLs are not supported' },
+        { status: 400 }
+      );
+    }
+
+    console.log('Starting RunPod job:', { 
+      video_url: video_url.substring(0, 60) + '...', 
+      camera_context: camera_context?.substring(0, 30),
+      detection_targets: detection_targets?.substring(0, 30)
+    });
 
     // Call RunPod async endpoint
     const response = await fetch(
@@ -34,9 +49,8 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           input: {
             video_url,
-            context_text: context_text || 'Detect any suspicious or threatening behavior',
-            fps: 2, // Extract 2 frames per second
-            max_frames: 100, // Cap at 100 frames
+            camera_context: camera_context || 'Security surveillance camera',
+            detection_targets: detection_targets || 'Suspicious or threatening behavior',
           },
         }),
       }
