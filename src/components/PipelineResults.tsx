@@ -1,18 +1,14 @@
 'use client';
 
-import { useState } from 'react';
 import { AnalysisResult } from '@/types';
-import { AlertTriangle, CheckCircle, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Eye } from 'lucide-react';
 
 interface PipelineResultsProps {
   result: AnalysisResult;
 }
 
 export function PipelineResults({ result }: PipelineResultsProps) {
-  const [showDetails, setShowDetails] = useState(false);
-
   const gemini = result.geminiVerification;
-  const edge = result.edgeDetection;
 
   if (!gemini) {
     return (
@@ -51,8 +47,8 @@ export function PipelineResults({ result }: PipelineResultsProps) {
         {/* Verdict Header */}
         <div className={`p-5 ${
           gemini.isAnomaly 
-            ? 'bg-gradient-to-r from-[var(--accent-danger)]/20 to-transparent border-b border-[var(--accent-danger)]/20' 
-            : 'bg-gradient-to-r from-[var(--accent-primary)]/20 to-transparent border-b border-[var(--accent-primary)]/20'
+            ? 'bg-gradient-to-r from-[var(--accent-danger)]/20 to-transparent' 
+            : 'bg-gradient-to-r from-[var(--accent-primary)]/20 to-transparent'
         }`}>
           <div className="flex items-start gap-4">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
@@ -92,7 +88,7 @@ export function PipelineResults({ result }: PipelineResultsProps) {
 
         {/* Key Observations */}
         {gemini.keyObservations && gemini.keyObservations.length > 0 && (
-          <div className="p-5 border-b border-[var(--border-color)]">
+          <div className="p-5">
             <h4 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
               Key Observations
             </h4>
@@ -106,56 +102,6 @@ export function PipelineResults({ result }: PipelineResultsProps) {
             </ul>
           </div>
         )}
-
-        {/* Reasoning */}
-        <div className="p-5">
-          <button
-            onClick={() => setShowDetails(!showDetails)}
-            className="flex items-center gap-2 text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider hover:text-[var(--text-secondary)] transition-colors w-full"
-          >
-            {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            Analysis Details
-          </button>
-          
-          {showDetails && (
-            <div className="mt-4 space-y-4">
-              {/* Reasoning */}
-              <div>
-                <p className="text-xs text-[var(--text-muted)] mb-2">AI Reasoning</p>
-                <p className="text-sm text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-tertiary)] p-4 rounded-lg">
-                  {gemini.reasoning || 'No detailed reasoning provided.'}
-                </p>
-              </div>
-
-              {/* Frame Analysis */}
-              {gemini.frameAnalysis && (
-                <div>
-                  <p className="text-xs text-[var(--text-muted)] mb-2">Frame Analysis</p>
-                  <p className="text-sm text-[var(--text-secondary)] leading-relaxed bg-[var(--bg-tertiary)] p-4 rounded-lg">
-                    {gemini.frameAnalysis}
-                  </p>
-                </div>
-              )}
-
-              {/* Edge Detection Stats */}
-              {edge && (
-                <div>
-                  <p className="text-xs text-[var(--text-muted)] mb-2">Detection Scores</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-[var(--bg-tertiary)] p-3 rounded-lg">
-                      <p className="text-[10px] text-[var(--text-muted)] uppercase">Best Match</p>
-                      <p className="text-xs text-[var(--text-secondary)] truncate">{edge.topAnomalyPrompt}</p>
-                    </div>
-                    <div className="bg-[var(--bg-tertiary)] p-3 rounded-lg">
-                      <p className="text-[10px] text-[var(--text-muted)] uppercase">Score Diff</p>
-                      <p className="text-sm font-mono">{edge.scoreDiff > 0 ? '+' : ''}{edge.scoreDiff.toFixed(4)}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
