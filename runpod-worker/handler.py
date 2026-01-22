@@ -140,11 +140,14 @@ def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> s
     return {"error": "Failed after 3 attempts"}
 
 
-def image_to_b64(img: Image.Image, quality: int = 90) -> str:
-    """Convert PIL Image to base64 string."""
+def image_to_b64(img: Image.Image, quality: int = 90, as_data_url: bool = False) -> str:
+    """Convert PIL Image to base64 string. Optionally returns as data URL for img src."""
     buf = BytesIO()
     img.save(buf, format='JPEG', quality=quality)
-    return base64.b64encode(buf.getvalue()).decode()
+    b64 = base64.b64encode(buf.getvalue()).decode()
+    if as_data_url:
+        return f"data:image/jpeg;base64,{b64}"
+    return b64
 
 
 def extract_reference_frame(video_path: str, position: float = 0.20) -> Optional[Image.Image]:
@@ -896,7 +899,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                             x = (idx % 2) * frame_size[0]
                             y = (idx // 2) * frame_size[1]
                             grid.paste(resized, (x, y))
-                        anomaly_frames_b64 = image_to_b64(grid)
+                        anomaly_frames_b64 = image_to_b64(grid, as_data_url=True)
             
             print("\n" + "="*60)
             print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
