@@ -37,31 +37,24 @@ USE_OPEN_CLIP = False
 
 
 def load_siglip():
-    """Load SigLIP2 model."""
+    """Load SigLIP2 model (the NEW Google SigLIP2, not old SigLIP)."""
     global SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER, USE_OPEN_CLIP
     
     if SIGLIP_MODEL is not None:
         return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
     
-    try:
-        import open_clip
-        print("📦 Loading SigLIP2...")
-        SIGLIP_MODEL, _, SIGLIP_PREPROCESS = open_clip.create_model_and_transforms(
-            "ViT-SO400M-14-SigLIP-384", pretrained="webli"
-        )
-        SIGLIP_MODEL = SIGLIP_MODEL.to(DEVICE).eval()
-        SIGLIP_TOKENIZER = open_clip.get_tokenizer("ViT-SO400M-14-SigLIP-384")
-        USE_OPEN_CLIP = True
-        print(f"✅ SigLIP2 loaded on {DEVICE}")
-    except ImportError:
-        from transformers import AutoProcessor, AutoModel
-        model_name = "google/siglip-so400m-patch14-384"
-        SIGLIP_PREPROCESS = AutoProcessor.from_pretrained(model_name)
-        SIGLIP_MODEL = AutoModel.from_pretrained(model_name).to(DEVICE).eval()
-        SIGLIP_TOKENIZER = SIGLIP_PREPROCESS
-        USE_OPEN_CLIP = False
-        print(f"✅ SigLIP loaded on {DEVICE}")
+    from transformers import AutoProcessor, AutoModel
     
+    # Use the NEW SigLIP2 model (better training objectives, location-aware, fine-grained semantics)
+    model_name = "google/siglip2-so400m-patch14-384"
+    print(f"📦 Loading SigLIP2: {model_name}...")
+    
+    SIGLIP_PREPROCESS = AutoProcessor.from_pretrained(model_name)
+    SIGLIP_MODEL = AutoModel.from_pretrained(model_name).to(DEVICE).eval()
+    SIGLIP_TOKENIZER = SIGLIP_PREPROCESS
+    USE_OPEN_CLIP = False  # Using transformers, not open_clip
+    
+    print(f"✅ SigLIP2 loaded on {DEVICE}")
     return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
 
 
