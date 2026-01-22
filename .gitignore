@@ -45,3 +45,4 @@ next-env.d.ts
 Untitled
 *.key
 *.secret
+__pycache__/
