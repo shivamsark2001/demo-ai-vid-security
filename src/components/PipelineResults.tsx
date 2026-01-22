@@ -1,13 +1,184 @@
 'use client';
 
-import { AnalysisResult } from '@/types';
-import { AlertTriangle, CheckCircle, Eye } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Eye, Clock, Activity, Flame } from 'lucide-react';
+
+interface HysteresisEvent {
+  start: number;
+  end: number;
+  duration: number;
+  peakScore: number;
+  avgScore: number;
+}
+
+interface HysteresisVerdict {
+  isAnomaly: boolean;
+  numEvents?: number;
+  totalAnomalyDuration?: number;
+  anomalyPercentage?: number;
+  peakScore?: number;
+}
+
+interface GeminiVerification {
+  isAnomaly: boolean;
+  anomalyType?: string | null;
+  confidence: number;
+  reasoning?: string;
+  keyObservations?: string[];
+}
 
 interface PipelineResultsProps {
-  result: AnalysisResult;
+  result: {
+    mode?: string;
+    status?: string;
+    videoDuration?: number;
+    finalVerdict?: HysteresisVerdict;
+    events?: HysteresisEvent[];
+    geminiVerification?: GeminiVerification;
+    annotatedGridB64?: string;
+    frameCount?: number;
+    promptBanks?: {
+      anomalyPrompts?: string[];
+      normalPrompts?: string[];
+      sceneAnalysis?: string;
+    };
+  };
+}
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
 export function PipelineResults({ result }: PipelineResultsProps) {
+  // Handle HYSTERESIS mode
+  if (result.mode === 'hysteresis' && result.finalVerdict) {
+    const verdict = result.finalVerdict;
+    const events = result.events || [];
+    const isAnomaly = verdict.isAnomaly;
+
+    return (
+      <div className="space-y-4">
+        {/* Main Verdict Card */}
+        <div className="glass-card overflow-hidden">
+          <div className={`p-5 ${
+            isAnomaly 
+              ? 'bg-gradient-to-r from-[var(--accent-danger)]/20 to-transparent' 
+              : 'bg-gradient-to-r from-[var(--accent-primary)]/20 to-transparent'
+          }`}>
+            <div className="flex items-start gap-4">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center ${
+                isAnomaly 
+                  ? 'bg-[var(--accent-danger)]/20' 
+                  : 'bg-[var(--accent-primary)]/20'
+              }`}>
+                {isAnomaly ? (
+                  <Flame className="w-7 h-7 text-[var(--accent-danger)]" />
+                ) : (
+                  <CheckCircle className="w-7 h-7 text-[var(--accent-primary)]" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className={`text-xl font-bold ${
+                  isAnomaly ? 'text-[var(--accent-danger)]' : 'text-[var(--accent-primary)]'
+                }`}>
+                  {isAnomaly ? '🚨 Anomaly Detected' : '✅ Normal Activity'}
+                </h3>
+                {isAnomaly && verdict.anomalyPercentage !== undefined && (
+                  <p className="text-sm text-[var(--text-secondary)] mt-1">
+                    {verdict.anomalyPercentage.toFixed(1)}% of video flagged
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          {isAnomaly && (
+            <div className="grid grid-cols-3 gap-4 p-5 border-t border-white/5">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-[var(--accent-danger)]">
+                  {verdict.numEvents || 0}
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">Events</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-[var(--text-primary)]">
+                  {formatTime(verdict.totalAnomalyDuration || 0)}
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">Duration</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-orange-400">
+                  {((verdict.peakScore || 0) * 100).toFixed(1)}
+                </div>
+                <div className="text-xs text-[var(--text-muted)]">Peak Score</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Events Timeline */}
+        {events.length > 0 && (
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="w-4 h-4 text-[var(--accent-primary)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Detected Events
+              </span>
+            </div>
+            <div className="space-y-3">
+              {events.map((event, i) => (
+                <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-[var(--bg-tertiary)]">
+                  <div className="w-10 h-10 rounded-lg bg-[var(--accent-danger)]/20 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-[var(--accent-danger)]" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-[var(--text-primary)]">
+                        Event {i + 1}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {formatTime(event.start)} → {formatTime(event.end)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      Duration: {formatTime(event.duration)} • Peak: {(event.peakScore * 100).toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Scene Analysis */}
+        {result.promptBanks?.sceneAnalysis && (
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Eye className="w-4 h-4 text-[var(--accent-primary)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Scene Analysis
+              </span>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+              {result.promptBanks.sceneAnalysis}
+            </p>
+          </div>
+        )}
+
+        {/* Video Info */}
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
+            <span>Mode: Hysteresis</span>
+            <span>Duration: {formatTime(result.videoDuration || 0)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Handle BATCH mode (original behavior)
   const gemini = result.geminiVerification;
 
   if (!gemini) {
