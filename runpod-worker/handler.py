@@ -26,8 +26,26 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 GEMINI_MODEL = "google/gemini-3-flash-preview"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+print("="*60)
+print("🚀 VIDEO SECURITY ANALYSIS - STARTUP")
+print("="*60)
 print(f"🖥️  Device: {DEVICE}")
-print(f"🔑 API Key: {'Set' if OPENROUTER_API_KEY else 'NOT SET'}")
+print(f"🔧 CUDA Available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    print(f"🔧 GPU: {torch.cuda.get_device_name(0)}")
+    print(f"🔧 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
+# Debug OpenRouter API Key
+if OPENROUTER_API_KEY:
+    key_preview = OPENROUTER_API_KEY[:10] + "..." + OPENROUTER_API_KEY[-4:]
+    print(f"🔑 OPENROUTER_API_KEY: SET ({key_preview})")
+else:
+    print(f"❌ OPENROUTER_API_KEY: NOT SET!")
+    print(f"   → Set it with: export OPENROUTER_API_KEY=sk-or-...")
+    print(f"   → Or in RunPod environment variables")
+
+print(f"🤖 Gemini Model: {GEMINI_MODEL}")
+print("="*60)
 
 # ============ Model Loading ============
 SIGLIP_MODEL = None
@@ -87,7 +105,10 @@ def extract_json_object(text: str) -> dict | None:
 def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> str | dict:
     """Call Gemini via OpenRouter."""
     if not OPENROUTER_API_KEY:
-        return {"error": "No OPENROUTER_API_KEY"}
+        print("❌ call_gemini failed: OPENROUTER_API_KEY not set!")
+        return {"error": "No OPENROUTER_API_KEY - set environment variable"}
+    
+    print(f"🌐 Calling Gemini ({GEMINI_MODEL})...")
     
     content = [{"type": "text", "text": prompt}]
     if image_b64:
