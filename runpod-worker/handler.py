@@ -401,7 +401,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     
     # Processing params
     scan_fps = job_input.get("scan_fps", 1)  # 1 FPS scanning
-    anomaly_threshold = job_input.get("anomaly_threshold", 0.01)  # Score threshold
+    anomaly_threshold = job_input.get("anomaly_threshold", 0)  # Score threshold (0 = any positive diff)
     
     # HYSTERESIS params
     min_consecutive = job_input.get("min_consecutive", 2)  # Need N consecutive frames above threshold
