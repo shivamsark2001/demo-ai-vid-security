@@ -27,7 +27,8 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download and cache SigLIP model via open_clip
+# Try to pre-download SigLIP model (optional - will download at runtime if this fails)
+# This can timeout on slow connections, so we make it non-blocking
 RUN python -c "\
 import open_clip; \
 print('📦 Downloading SigLIP model...'); \
@@ -35,7 +36,7 @@ model, _, preprocess = open_clip.create_model_and_transforms('ViT-SO400M-14-SigL
 print('📦 Downloading tokenizer...'); \
 tokenizer = open_clip.get_tokenizer('ViT-SO400M-14-SigLIP-384'); \
 print('✅ SigLIP model cached!'); \
-"
+" || echo "⚠️ Model pre-cache failed, will download at runtime"
 
 # Copy handler
 COPY handler.py .
