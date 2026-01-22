@@ -121,9 +121,10 @@ export default function Home() {
         // Regular file upload flow
         setStatus('uploading');
         setProgress(0);
-        setCurrentStep('Uploading...');
+        setCurrentStep('Uploading to cloud...');
 
         try {
+          console.log('Starting upload for:', selectedFile.name, selectedFile.size);
           const blob = await upload(selectedFile.name, selectedFile, {
             access: 'public',
             handleUploadUrl: '/api/upload',
@@ -133,12 +134,32 @@ export default function Home() {
               setCurrentStep(`Uploading ${percent}%`);
             },
           });
+          
+          console.log('Upload response:', blob);
+          
+          // Validate upload response
+          if (!blob || !blob.url) {
+            console.error('Upload returned invalid response:', blob);
+            setStatus('failed');
+            setCurrentStep('Upload failed - no URL returned');
+            return;
+          }
+          
+          // Double-check it's not a blob: URL
+          if (blob.url.startsWith('blob:')) {
+            console.error('Upload returned browser blob URL instead of hosted URL:', blob.url);
+            setStatus('failed');
+            setCurrentStep('Upload failed - invalid URL');
+            return;
+          }
+          
           blobUrl = blob.url;
           blobUrlToDelete = blob.url;
+          console.log('Upload successful, URL:', blobUrl);
         } catch (uploadError) {
           console.error('Upload failed:', uploadError);
           setStatus('failed');
-          setCurrentStep('Upload failed');
+          setCurrentStep('Upload failed - ' + (uploadError instanceof Error ? uploadError.message : 'unknown error'));
           return;
         }
         
@@ -153,15 +174,15 @@ export default function Home() {
       let useMock = false;
       let jobId = '';
 
-      // SAFEGUARD: Never send browser blob: URLs to backend
-      if (blobUrl.startsWith('blob:')) {
-        console.error('ERROR: Attempted to send browser blob URL to backend:', blobUrl);
+      // FINAL SAFEGUARD: Never send browser blob: URLs to backend
+      if (!blobUrl || blobUrl.startsWith('blob:')) {
+        console.error('CRITICAL: Invalid URL before sending to backend:', blobUrl);
         setStatus('failed');
-        setCurrentStep('Upload error - please try again');
+        setCurrentStep('Invalid video URL - please try again');
         return;
       }
 
-      console.log('Sending to RunPod:', { video_url: blobUrl.substring(0, 80) + '...' });
+      console.log('✅ Sending to RunPod:', blobUrl.substring(0, 100));
 
       try {
         const runpodResponse = await fetch('/api/runpod/run', {
