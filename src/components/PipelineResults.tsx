@@ -112,6 +112,26 @@ export function PipelineResults({ result }: PipelineResultsProps) {
           )}
         </div>
 
+        {/* Anomaly Frames Grid */}
+        {result.anomalyFramesB64 && (
+          <div className="glass-card p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Eye className="w-4 h-4 text-[var(--accent-danger)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Anomaly Frames
+              </span>
+              <span className="text-[10px] text-[var(--text-muted)] ml-auto">
+                Frames analyzed by AI
+              </span>
+            </div>
+            <img 
+              src={result.anomalyFramesB64} 
+              alt="Anomaly frames" 
+              className="w-full rounded-lg border border-[var(--accent-danger)]/30"
+            />
+          </div>
+        )}
+
         {/* AI Reasoning (from Gemini) */}
         {gemini?.reasoning && (
           <div className="glass-card p-5">

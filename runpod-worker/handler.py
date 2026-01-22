@@ -909,11 +909,13 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             
             # Run Gemini verification if anomalies detected
             gemini_result = None
+            anomaly_frames_b64 = None
+            event_frames = []
+            
             if final_is_anomaly and events:
                 print("\n🧠 Running Gemini verification on detected anomaly...")
                 # Extract frames from the first/main anomaly event
                 main_event = events[0]
-                event_frames = []
                 
                 # Get 4 frames from the anomaly event
                 event_start = main_event["start"]
@@ -927,7 +929,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                         # Save to temp file for gemini_verify
                         frame_path = os.path.join(frames_dir, f"event_frame_{i}.jpg")
                         frame.save(frame_path, quality=90)
-                        event_frames.append({"path": frame_path, "timestamp": t, "index": i})
+                        event_frames.append({"path": frame_path, "timestamp": t, "index": i, "image": frame})
                 
                 if event_frames:
                     # Create edge_result-like dict for gemini_verify
@@ -937,6 +939,19 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                         "top_anomaly_prompt": anomaly_prompts[0] if anomaly_prompts else "Anomaly detected",
                     }
                     gemini_result = gemini_verify(event_frames, camera_context, detection_targets, edge_hint)
+                    
+                    # Create a grid of anomaly frames to return to UI
+                    frame_images = [f["image"] for f in event_frames if f.get("image")]
+                    if frame_images:
+                        # Create 2x2 grid
+                        frame_size = (384, 384)
+                        grid = Image.new('RGB', (frame_size[0] * 2, frame_size[1] * 2), (0, 0, 0))
+                        for idx, img in enumerate(frame_images[:4]):
+                            resized = img.resize(frame_size, Image.Resampling.LANCZOS)
+                            x = (idx % 2) * frame_size[0]
+                            y = (idx // 2) * frame_size[1]
+                            grid.paste(resized, (x, y))
+                        anomaly_frames_b64 = image_to_b64(grid)
             
             print("\n" + "="*60)
             print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
@@ -970,6 +985,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                 },
                 
                 "geminiVerification": gemini_result,
+                
+                "anomalyFramesB64": anomaly_frames_b64,
                 
                 "events": [
                     {
