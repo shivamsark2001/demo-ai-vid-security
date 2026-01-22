@@ -217,12 +217,10 @@ def extract_frames_uniform(video_path: str, output_dir: str, num_frames: int = 8
     """Extract uniformly spaced frames from entire video."""
     print(f"🎞️  Extracting {num_frames} frames uniformly...")
     
-    # Get duration first
     duration, _ = get_video_info(video_path)
     
     frames = []
     for i in range(num_frames):
-        # Calculate timestamp for uniform sampling
         timestamp = (i / (num_frames - 1)) * duration if num_frames > 1 else 0
         output_path = os.path.join(output_dir, f"frame_{i:04d}.jpg")
         
@@ -349,7 +347,7 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
 
 
 def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_size=256) -> Image.Image:
-    """Create annotated frame grid for Gemini verification."""
+    """Create annotated frame grid for UI display."""
     images = [Image.open(f["path"]).convert("RGB") for f in frames[:16]]
     n = len(images)
     rows = (n + cols - 1) // cols
@@ -389,70 +387,97 @@ def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_
     return grid
 
 
+def create_gemini_grid(frames: List[Dict], cols=4) -> Image.Image:
+    """
+    Create CLEAN frame grid for Gemini (no annotations).
+    Simpler grid lets VLM focus on visual content without bias from scores.
+    """
+    images = [Image.open(f["path"]).convert("RGB") for f in frames[:8]]
+    n = len(images)
+    rows = (n + cols - 1) // cols
+    tile_size = 128
+    
+    grid = Image.new('RGB', (cols * tile_size, rows * tile_size), (0, 0, 0))
+    
+    for i, img in enumerate(images):
+        row, col = i // cols, i % cols
+        x, y = col * tile_size, row * tile_size
+        tile = img.resize((tile_size, tile_size), Image.BICUBIC)
+        grid.paste(tile, (x, y))
+    
+    return grid
+
+
 def image_to_b64(img: Image.Image, quality: int = 90) -> str:
     buf = BytesIO()
     img.save(buf, format='JPEG', quality=quality)
     return base64.b64encode(buf.getvalue()).decode()
 
 
+def parse_anomaly_types(detection_targets: str) -> List[str]:
+    """Parse detection targets into structured anomaly types."""
+    types = []
+    for delim in [',', ';', '\n', '•', '-']:
+        if delim in detection_targets:
+            types = [t.strip() for t in detection_targets.split(delim) if t.strip()]
+            break
+    
+    if not types:
+        types = [detection_targets.strip()]
+    
+    return types
+
+
 def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, 
                   edge_result: Dict) -> Dict:
-    """Gemini verification with annotated frame grid."""
+    """
+    Gemini verification with CLEAN frame grid.
+    Key improvements:
+    1. Clean grid without score annotations (no bias)
+    2. Structured anomaly types list
+    3. Clearer task description
+    """
     print("🧠 Running Gemini verification...")
     
-    scores = edge_result.get("per_frame_scores", [])
-    grid = create_annotated_grid(frames, scores)
+    # Create CLEAN grid (no annotations - let Gemini see raw frames)
+    grid = create_gemini_grid(frames)
     grid_b64 = image_to_b64(grid)
     
-    # Build per-frame description
-    per_frame_desc = "\n".join([
-        f"  Frame {i+1} (t={frames[i].get('timestamp', 0):.1f}s): score={s:+.3f} ({'anomaly likely' if s > 0.015 else 'normal likely' if s < -0.015 else 'uncertain'})"
-        for i, s in enumerate(scores)
-    ])
+    # Parse detection targets into structured types
+    anomaly_types = parse_anomaly_types(detection_targets)
+    anomaly_types_desc = "\n".join([f"• {atype}" for atype in anomaly_types])
     
-    prompt = f"""=== VIDEO ANOMALY VERIFICATION ===
+    prompt = f"""=== VIDEO ANOMALY DETECTION ===
 
 CAMERA CONTEXT: {camera_context}
 
-USER DETECTION TARGETS: {detection_targets}
-
 EDGE DETECTOR (SigLIP2) RESULT:
-- Initial Assessment: {"🚨 ANOMALY DETECTED" if edge_result.get('is_anomaly') else "✅ NORMAL"}
-- Confidence Score: {edge_result.get('confidence', 0):.4f}
-- Score Difference (anomaly - normal): {edge_result.get('score_diff', 0):+.4f}
-- Top Anomaly Match: "{edge_result.get('top_anomaly_prompt', 'N/A')}"
-- Top Normal Match: "{edge_result.get('top_normal_prompt', 'N/A')}"
+- Detected as: {"ANOMALY" if edge_result.get('is_anomaly') else "NORMAL"}
+- Confidence: {edge_result.get('confidence', 0):.3f}
+- Top matching prompt: "{edge_result.get('top_anomaly_prompt', 'N/A')}"
 
-PER-FRAME SCORES (shown in image headers):
-{per_frame_desc}
+=== ANOMALY TYPES TO DETECT ===
+{anomaly_types_desc}
 
-=== VERIFICATION TASK ===
-The image shows a frame grid with timestamps and edge detector scores in the headers.
-- Positive scores (⚠️ red) indicate anomaly likelihood
-- Negative scores (✓ green) indicate normal likelihood
+=== TASK ===
+Analyze the 8-frame grid image above showing sequential video frames.
 
-1. VERIFY: Is the edge detector's assessment correct? Look carefully at the visual evidence.
-2. CLASSIFY: If anomaly, what specific type matches the user's detection targets?
-3. EXPLAIN: Provide detailed reasoning about what you observe.
-4. CONFIDENCE: Rate your confidence in this assessment.
+1. Is this truly an ANOMALY or NORMAL activity?
+2. If anomaly, which specific type from the list above?
+3. Provide detailed reasoning about what you observe in the frames.
 
-Consider:
-- False positives: Normal activity that might look suspicious
-- False negatives: Subtle anomalies the edge detector might miss
-- Context: What would be normal vs abnormal for THIS specific camera location
+Consider what would be normal vs abnormal for this camera context.
+Look for: unusual behavior, objects out of place, dangerous situations, policy violations.
 
 Respond in JSON format ONLY:
 {{
     "isAnomaly": true/false,
-    "anomalyType": "specific type or null if normal",
+    "anomalyType": "specific type from list or null if normal",
     "confidence": 0.0-1.0,
-    "reasoning": "detailed analysis of visual evidence",
-    "edgeAssessment": "agree/disagree with edge detector and why",
-    "keyObservations": ["observation 1", "observation 2", "observation 3"],
-    "frameAnalysis": "which frames show the anomaly and why"
+    "reasoning": "detailed analysis of what you observe in the frames"
 }}"""
 
-    response = call_gemini(prompt, grid_b64, max_tokens=1000)
+    response = call_gemini(prompt, grid_b64, max_tokens=600)
     
     if isinstance(response, dict) and "error" in response:
         return {"error": response["error"]}
@@ -465,9 +490,6 @@ Respond in JSON format ONLY:
             "anomalyType": parsed.get("anomalyType"),
             "confidence": parsed.get("confidence", 0),
             "reasoning": parsed.get("reasoning", ""),
-            "edgeAssessment": parsed.get("edgeAssessment", ""),
-            "keyObservations": parsed.get("keyObservations", []),
-            "frameAnalysis": parsed.get("frameAnalysis", "")
         }
     
     # Fallback parsing
@@ -552,9 +574,9 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         print("\n🧠 Stage 2: Gemini Verification")
         gemini_result = gemini_verify(frames, camera_context, detection_targets, edge_result)
         
-        # Create annotated grid for response
-        grid = create_annotated_grid(frames, edge_result.get("per_frame_scores", []))
-        grid_b64 = image_to_b64(grid)
+        # Create annotated grid for response (with scores for UI display)
+        annotated_grid = create_annotated_grid(frames, edge_result.get("per_frame_scores", []))
+        grid_b64 = image_to_b64(annotated_grid)
         
         # Determine final verdict
         # Trust Gemini if it has high confidence, otherwise use edge detection
