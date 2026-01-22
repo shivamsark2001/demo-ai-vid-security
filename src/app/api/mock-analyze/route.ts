@@ -1,48 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Mock endpoint - simulates sequential scan until first anomaly
+// Mock endpoint - simulates the new simplified output format
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { camera_context, detection_targets } = body;
+  await request.json(); // consume body
 
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  // Simulate finding an anomaly
+  // Simulate finding an anomaly with the new simplified format
   const mockResult = {
-    status: 'completed',
-    videoDuration: 45,
-    events: [],
-    
-    edgeDetection: {
-      isAnomaly: true,
-      scoreDiff: 0.0456,
-      anomalyScore: 0.72,
-      normalScore: 0.67,
-      confidence: 0.0456,
-      perFrameScores: [0.012, 0.034, 0.067, 0.089, 0.045, 0.023, 0.011, -0.005],
-      topAnomalyPrompt: 'person behaving suspiciously near entrance',
-      topNormalPrompt: 'person walking normally',
-    },
-    
-    geminiVerification: {
-      isAnomaly: true,
-      anomalyType: 'Suspicious Surveillance Behavior',
-      confidence: 0.84,
-      reasoning: `After sequential analysis, an anomaly was detected at approximately 12 seconds into the video. The individual exhibits behavior inconsistent with normal pedestrian traffic - repeatedly pausing, scanning surroundings, and appearing to check camera positions. Frames 3-5 show the clearest evidence of this behavior pattern with anomaly scores exceeding the threshold.`,
-      keyObservations: [
-        'Individual pauses repeatedly near entrance area',
-        'Scanning behavior detected in frames 3-5',
-        'Movement pattern inconsistent with normal traffic',
-        'Apparent awareness of surveillance positions'
-      ],
-      frameAnalysis: 'Frames 3-5 show peak anomaly scores (+0.067 to +0.089). Frame 4 captures the subject mid-turn, appearing to check surroundings. The edge detector correctly flagged these frames.'
-    },
-    
-    annotatedGridB64: null,
-    frameCount: 8,
-    anomalyTimestamp: 12.0,
-    framesScanned: 24,
+    category: 'theft',
+    reasoning: 'In frames 1-3, a person is seen approaching the counter area with normal posture. By frame 4, their body language shifts - they lean forward unnaturally while their hand moves toward merchandise on the display. Frames 5-7 clearly show concealment behavior: the item is grabbed and quickly moved toward their jacket pocket. Frame 8 shows them stepping back with hands now empty but jacket bulging. This sequence matches the visual pattern of shoplifting.',
+    anomalyFramesB64: null, // Would be a base64 2x4 grid in real response
   };
 
   return NextResponse.json(mockResult);
