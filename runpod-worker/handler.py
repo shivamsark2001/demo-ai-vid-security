@@ -399,7 +399,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     detection_targets = job_input.get("detection_targets", "Suspicious activity")
     
     # Processing params
-    scan_fps = job_input.get("scan_fps", 1)  # Frames per second to scan
+    scan_fps = job_input.get("scan_fps", 1)  # 1 FPS scanning
     window_size = job_input.get("window_size", 8)  # Frames to analyze when anomaly found
     anomaly_threshold = job_input.get("anomaly_threshold", 0.01)  # Score threshold
     
@@ -484,7 +484,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
             start_time = max(0, anomaly_time - 2)
             end_time = min(duration, anomaly_time + 6)
             
-            window_frames = extract_frames_range(video_path, start_time, end_time, frames_dir, fps=2)
+            window_frames = extract_frames_range(video_path, start_time, end_time, frames_dir, fps=1)
             
             if window_frames:
                 # Score all window frames
