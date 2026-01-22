@@ -820,12 +820,12 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     # Batch mode params
     num_frames = job_input.get("num_frames", 8)
     
-    # Hysteresis mode params
+    # Hysteresis mode params - TUNED FOR BETTER SENSITIVITY
     sample_fps = job_input.get("sample_fps", 2.0)
-    high_threshold = job_input.get("high_threshold", 0.02)
-    low_threshold = job_input.get("low_threshold", -0.01)
-    min_frames_to_trigger = job_input.get("min_frames_to_trigger", 3)
-    min_frames_to_clear = job_input.get("min_frames_to_clear", 5)
+    high_threshold = job_input.get("high_threshold", 0.01)      # Lower = more sensitive
+    low_threshold = job_input.get("low_threshold", -0.005)      # Higher = stays in anomaly longer
+    min_frames_to_trigger = job_input.get("min_frames_to_trigger", 2)  # Faster trigger
+    min_frames_to_clear = job_input.get("min_frames_to_clear", 4)      # Slightly faster clear
     
     if not video_url:
         return {"error": "video_url is required"}
