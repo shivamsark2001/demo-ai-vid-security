@@ -824,7 +824,7 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     sample_fps = job_input.get("sample_fps", 2.0)
     high_threshold = job_input.get("high_threshold", 0)      # ANOMALY when score > 0
     low_threshold = job_input.get("low_threshold", 0)        # NORMAL when score < 0
-    min_frames_to_trigger = job_input.get("min_frames_to_trigger", 2)  # 2 consecutive frames to trigger
+    min_frames_to_trigger = job_input.get("min_frames_to_trigger", 1)  # Instant trigger on first positive
     min_frames_to_clear = job_input.get("min_frames_to_clear", 4)      # 4 consecutive frames to clear
     
     if not video_url:
