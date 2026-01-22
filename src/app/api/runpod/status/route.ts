@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Self-hosted API via Cloudflare tunnel
-const API_URL = process.env.ANALYSIS_API_URL || 'https://explanation-argument-mono-produced.trycloudflare.com';
+const API_URL = process.env.ANALYSIS_API_URL || 'https://realtor-governor-contractors-manager.trycloudflare.com';
 
 export async function GET(request: NextRequest) {
   try {
