@@ -27,28 +27,15 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download and cache models (optional - will download at runtime if this fails)
-# Try transformers SigLIP2 first, then open_clip as fallback
+# Pre-download and cache SigLIP model via open_clip
 RUN python -c "\
-import sys; \
-try: \
-    from transformers import AutoProcessor, AutoModel; \
-    print('📦 Downloading SigLIP2 via transformers...'); \
-    AutoProcessor.from_pretrained('google/siglip2-so400m-patch14-384'); \
-    AutoModel.from_pretrained('google/siglip2-so400m-patch14-384'); \
-    print('✅ SigLIP2 cached via transformers!'); \
-except Exception as e: \
-    print(f'⚠️ Transformers cache failed: {e}'); \
-    print('Trying open_clip fallback...'); \
-    try: \
-        import open_clip; \
-        model, _, preprocess = open_clip.create_model_and_transforms('ViT-SO400M-14-SigLIP-384', pretrained='webli'); \
-        tokenizer = open_clip.get_tokenizer('ViT-SO400M-14-SigLIP-384'); \
-        print('✅ SigLIP cached via open_clip!'); \
-    except Exception as e2: \
-        print(f'⚠️ open_clip cache also failed: {e2}'); \
-        print('Models will download at runtime.'); \
-" || echo "Model pre-caching skipped, will download at runtime"
+import open_clip; \
+print('📦 Downloading SigLIP model...'); \
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-SO400M-14-SigLIP-384', pretrained='webli'); \
+print('📦 Downloading tokenizer...'); \
+tokenizer = open_clip.get_tokenizer('ViT-SO400M-14-SigLIP-384'); \
+print('✅ SigLIP model cached!'); \
+"
 
 # Copy handler
 COPY handler.py .

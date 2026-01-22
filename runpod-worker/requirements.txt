@@ -1,7 +1,6 @@
 runpod==1.6.0
-transformers>=4.49.0
+open_clip_torch>=2.24.0
 Pillow>=10.0.0
 requests>=2.31.0
 numpy>=1.24.0
 torch>=2.0.0
-accelerate>=0.26.0
