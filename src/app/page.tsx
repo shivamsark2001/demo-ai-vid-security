@@ -3,15 +3,18 @@
 import { useState, useRef, useCallback } from 'react';
 import { Scan, Play } from 'lucide-react';
 import { upload } from '@vercel/blob/client';
-import { VideoUpload } from '@/components/VideoUpload';
+import { VideoUpload, SAMPLE_VIDEOS } from '@/components/VideoUpload';
 import { ContextInput } from '@/components/ContextInput';
 import { AnalysisProgress } from '@/components/AnalysisProgress';
 import { VideoPlayer, VideoPlayerRef } from '@/components/VideoPlayer';
 import { PipelineResults } from '@/components/PipelineResults';
 import { AnalysisStatus, AnalysisResult } from '@/types';
 
+type SampleVideo = typeof SAMPLE_VIDEOS[0];
+
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedSample, setSelectedSample] = useState<SampleVideo | null>(null);
   const [cameraContext, setCameraContext] = useState('');
   const [detectionTargets, setDetectionTargets] = useState('');
   const [status, setStatus] = useState<AnalysisStatus>('idle');
@@ -24,17 +27,30 @@ export default function Home() {
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
+    setSelectedSample(null);
     const url = URL.createObjectURL(file);
     setVideoUrl(url);
     setResult(null);
     setStatus('idle');
   };
 
+  const handleSampleSelect = (sample: SampleVideo) => {
+    setSelectedSample(sample);
+    setSelectedFile(null);
+    setVideoUrl(sample.url);
+    // Pre-fill context with suggested values
+    setCameraContext(sample.suggestedContext);
+    setDetectionTargets(sample.suggestedTargets);
+    setResult(null);
+    setStatus('idle');
+  };
+
   const handleClearFile = () => {
-    if (videoUrl) {
+    if (videoUrl && selectedFile) {
       URL.revokeObjectURL(videoUrl);
     }
     setSelectedFile(null);
+    setSelectedSample(null);
     setVideoUrl(null);
     setResult(null);
     setStatus('idle');
@@ -88,40 +104,51 @@ export default function Home() {
   };
 
   const handleAnalyze = async () => {
-    if (!selectedFile) return;
+    if (!selectedFile && !selectedSample) return;
 
     let blobUrlToDelete: string | null = null;
 
     try {
-      setStatus('uploading');
-      setProgress(0);
-      setCurrentStep('Uploading...');
-
       let blobUrl: string;
 
-      try {
-        const blob = await upload(selectedFile.name, selectedFile, {
-          access: 'public',
-          handleUploadUrl: '/api/upload',
-          onUploadProgress: (progressEvent) => {
-            const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
-            setProgress(percent);
-            setCurrentStep(`Uploading ${percent}%`);
-          },
-        });
-        blobUrl = blob.url;
-        blobUrlToDelete = blob.url;
-      } catch (uploadError) {
-        console.error('Upload failed:', uploadError);
-        setStatus('failed');
-        setCurrentStep('Upload failed');
+      // For sample videos, skip upload - they're already hosted
+      if (selectedSample) {
+        blobUrl = selectedSample.url;
+        setStatus('queued');
+        setProgress(0);
+        setCurrentStep('Starting analysis...');
+      } else if (selectedFile) {
+        // Regular file upload flow
+        setStatus('uploading');
+        setProgress(0);
+        setCurrentStep('Uploading...');
+
+        try {
+          const blob = await upload(selectedFile.name, selectedFile, {
+            access: 'public',
+            handleUploadUrl: '/api/upload',
+            onUploadProgress: (progressEvent) => {
+              const percent = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+              setProgress(percent);
+              setCurrentStep(`Uploading ${percent}%`);
+            },
+          });
+          blobUrl = blob.url;
+          blobUrlToDelete = blob.url;
+        } catch (uploadError) {
+          console.error('Upload failed:', uploadError);
+          setStatus('failed');
+          setCurrentStep('Upload failed');
+          return;
+        }
+        
+        setProgress(100);
+        setStatus('queued');
+        setProgress(0);
+        setCurrentStep('Starting analysis...');
+      } else {
         return;
       }
-      
-      setProgress(100);
-      setStatus('queued');
-      setProgress(0);
-      setCurrentStep('Starting analysis...');
 
       let useMock = false;
       let jobId = '';
@@ -193,6 +220,7 @@ export default function Home() {
 
   const isAnalyzing = status !== 'idle' && status !== 'completed' && status !== 'failed';
   const hasResults = result !== null;
+  const hasVideo = selectedFile !== null || selectedSample !== null;
 
   return (
     <main className="min-h-screen p-4 md:p-6 lg:p-8">
@@ -218,7 +246,9 @@ export default function Home() {
             <div className="glass-card p-4 animate-slide-up stagger-1">
               <VideoUpload
                 onFileSelect={handleFileSelect}
+                onSampleSelect={handleSampleSelect}
                 selectedFile={selectedFile}
+                selectedSample={selectedSample}
                 onClear={handleClearFile}
                 disabled={isAnalyzing}
               />
@@ -248,7 +278,7 @@ export default function Home() {
             {/* Analyze Button */}
             <button
               onClick={handleAnalyze}
-              disabled={!selectedFile || isAnalyzing}
+              disabled={!hasVideo || isAnalyzing}
               className="btn-primary w-full flex items-center justify-center gap-2 animate-slide-up stagger-3"
             >
               <Play className="w-4 h-4" />
