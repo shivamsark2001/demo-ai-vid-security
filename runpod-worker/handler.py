@@ -51,12 +51,11 @@ print("="*60)
 SIGLIP_MODEL = None
 SIGLIP_PREPROCESS = None
 SIGLIP_TOKENIZER = None
-USE_OPEN_CLIP = False
 
 
 def load_siglip():
     """Load SigLIP model via open_clip."""
-    global SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER, USE_OPEN_CLIP
+    global SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
     
     if SIGLIP_MODEL is not None:
         return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
@@ -69,7 +68,6 @@ def load_siglip():
     )
     SIGLIP_MODEL = SIGLIP_MODEL.to(DEVICE).eval()
     SIGLIP_TOKENIZER = open_clip.get_tokenizer("ViT-SO400M-14-SigLIP-384")
-    USE_OPEN_CLIP = True
     
     print(f"✅ SigLIP loaded on {DEVICE}")
     return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
@@ -409,7 +407,7 @@ def extract_frames_uniform(video_path: str, output_dir: str, num_frames: int = 8
 
 
 def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], anomaly_prompts: List[str]) -> Dict:
-    """Batch SigLIP2 detection - process all frames together for better accuracy."""
+    """Batch SigLIP detection using open_clip - process all frames together for better accuracy."""
     model, preprocess, tokenizer = load_siglip()
     
     if not normal_prompts or not anomaly_prompts:
@@ -417,63 +415,31 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
     
     print(f"⚡ Batch scoring {len(frames)} frames...")
     
-    if USE_OPEN_CLIP:
-        processed = torch.stack([preprocess(f) for f in frames]).to(DEVICE)
+    processed = torch.stack([preprocess(f) for f in frames]).to(DEVICE)
+    
+    with torch.no_grad():
+        img_features = model.encode_image(processed)
+        img_features = img_features / img_features.norm(dim=-1, keepdim=True)
         
-        with torch.no_grad():
-            img_features = model.encode_image(processed)
-            img_features = img_features / img_features.norm(dim=-1, keepdim=True)
-            
-            normal_tokens = tokenizer(normal_prompts).to(DEVICE)
-            anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
-            
-            normal_features = model.encode_text(normal_tokens)
-            normal_features = normal_features / normal_features.norm(dim=-1, keepdim=True)
-            
-            anomaly_features = model.encode_text(anomaly_tokens)
-            anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
+        normal_tokens = tokenizer(normal_prompts).to(DEVICE)
+        anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
         
-        normal_sim = (img_features @ normal_features.T).max(dim=1).values
-        anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values
-        per_frame_scores = (anomaly_sim - normal_sim).cpu().numpy().tolist()
+        normal_features = model.encode_text(normal_tokens)
+        normal_features = normal_features / normal_features.norm(dim=-1, keepdim=True)
         
-        avg_normal = normal_sim.mean().item()
-        avg_anomaly = anomaly_sim.mean().item()
-        score_diff = avg_anomaly - avg_normal
-        
-        best_anomaly_idx = (img_features @ anomaly_features.T).mean(dim=0).argmax().item()
-        best_normal_idx = (img_features @ normal_features.T).mean(dim=0).argmax().item()
-        
-    else:
-        all_normal_sims = []
-        all_anomaly_sims = []
-        per_frame_scores = []
-        
-        for frame in frames:
-            inputs = preprocess(
-                text=normal_prompts + anomaly_prompts,
-                images=frame, return_tensors="pt", padding=True
-            ).to(DEVICE)
-            
-            with torch.no_grad():
-                outputs = model(**inputs)
-                logits = outputs.logits_per_image[0]
-                probs = torch.sigmoid(logits).cpu().numpy()
-            
-            n = len(normal_prompts)
-            normal_sim = float(probs[:n].max())
-            anomaly_sim = float(probs[n:].max())
-            
-            all_normal_sims.append(normal_sim)
-            all_anomaly_sims.append(anomaly_sim)
-            per_frame_scores.append(anomaly_sim - normal_sim)
-        
-        avg_normal = np.mean(all_normal_sims)
-        avg_anomaly = np.mean(all_anomaly_sims)
-        score_diff = avg_anomaly - avg_normal
-        
-        best_anomaly_idx = 0
-        best_normal_idx = 0
+        anomaly_features = model.encode_text(anomaly_tokens)
+        anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
+    
+    normal_sim = (img_features @ normal_features.T).max(dim=1).values
+    anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values
+    per_frame_scores = (anomaly_sim - normal_sim).cpu().numpy().tolist()
+    
+    avg_normal = normal_sim.mean().item()
+    avg_anomaly = anomaly_sim.mean().item()
+    score_diff = avg_anomaly - avg_normal
+    
+    best_anomaly_idx = (img_features @ anomaly_features.T).mean(dim=0).argmax().item()
+    best_normal_idx = (img_features @ normal_features.T).mean(dim=0).argmax().item()
     
     is_anomaly = score_diff > 0
     confidence = abs(score_diff)
@@ -495,11 +461,8 @@ def siglip_detect_batch(frames: List[Image.Image], normal_prompts: List[str], an
 
 # ============ Hysteresis-Based Detection ============
 def precompute_text_features(normal_prompts: List[str], anomaly_prompts: List[str]) -> tuple:
-    """Pre-compute text features for efficiency in sequential processing."""
+    """Pre-compute text features for efficiency in sequential processing (open_clip)."""
     model, preprocess, tokenizer = load_siglip()
-    
-    if not USE_OPEN_CLIP:
-        return None, None
     
     with torch.no_grad():
         normal_tokens = tokenizer(normal_prompts).to(DEVICE)
@@ -520,48 +483,30 @@ def siglip_score_single_frame(
     normal_features: torch.Tensor = None,
     anomaly_features: torch.Tensor = None
 ) -> tuple:
-    """Score a single frame against prompts. Returns (score_diff, normal_sim, anomaly_sim)."""
+    """Score a single frame against prompts using open_clip. Returns (score_diff, normal_sim, anomaly_sim)."""
     model, preprocess, tokenizer = load_siglip()
     
-    if USE_OPEN_CLIP:
-        processed = preprocess(frame).unsqueeze(0).to(DEVICE)
+    processed = preprocess(frame).unsqueeze(0).to(DEVICE)
+    
+    with torch.no_grad():
+        img_features = model.encode_image(processed)
+        img_features = img_features / img_features.norm(dim=-1, keepdim=True)
         
-        with torch.no_grad():
-            img_features = model.encode_image(processed)
-            img_features = img_features / img_features.norm(dim=-1, keepdim=True)
-            
-            if normal_features is None:
-                normal_tokens = tokenizer(normal_prompts).to(DEVICE)
-                normal_features = model.encode_text(normal_tokens)
-                normal_features = normal_features / normal_features.norm(dim=-1, keepdim=True)
-            
-            if anomaly_features is None:
-                anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
-                anomaly_features = model.encode_text(anomaly_tokens)
-                anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
+        if normal_features is None:
+            normal_tokens = tokenizer(normal_prompts).to(DEVICE)
+            normal_features = model.encode_text(normal_tokens)
+            normal_features = normal_features / normal_features.norm(dim=-1, keepdim=True)
         
-        normal_sim = (img_features @ normal_features.T).max(dim=1).values.item()
-        anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values.item()
-        score_diff = anomaly_sim - normal_sim
-        
-        return score_diff, normal_sim, anomaly_sim
-    else:
-        inputs = preprocess(
-            text=normal_prompts + anomaly_prompts,
-            images=frame, return_tensors="pt", padding=True
-        ).to(DEVICE)
-        
-        with torch.no_grad():
-            outputs = model(**inputs)
-            logits = outputs.logits_per_image[0]
-            probs = torch.sigmoid(logits).cpu().numpy()
-        
-        n = len(normal_prompts)
-        normal_sim = float(probs[:n].max())
-        anomaly_sim = float(probs[n:].max())
-        score_diff = anomaly_sim - normal_sim
-        
-        return score_diff, normal_sim, anomaly_sim
+        if anomaly_features is None:
+            anomaly_tokens = tokenizer(anomaly_prompts).to(DEVICE)
+            anomaly_features = model.encode_text(anomaly_tokens)
+            anomaly_features = anomaly_features / anomaly_features.norm(dim=-1, keepdim=True)
+    
+    normal_sim = (img_features @ normal_features.T).max(dim=1).values.item()
+    anomaly_sim = (img_features @ anomaly_features.T).max(dim=1).values.item()
+    score_diff = anomaly_sim - normal_sim
+    
+    return score_diff, normal_sim, anomaly_sim
 
 
 def process_video_with_hysteresis(
