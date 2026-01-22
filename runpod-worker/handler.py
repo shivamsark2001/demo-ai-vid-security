@@ -906,12 +906,46 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                 return {"error": hysteresis_result["error"]}
             
             final_is_anomaly = hysteresis_result["is_anomaly"]
+            events = hysteresis_result["events"]
+            
+            # Run Gemini verification if anomalies detected
+            gemini_result = None
+            if final_is_anomaly and events:
+                print("\n🧠 Running Gemini verification on detected anomaly...")
+                # Extract frames from the first/main anomaly event
+                main_event = events[0]
+                event_frames = []
+                
+                # Get 4 frames from the anomaly event
+                event_start = main_event["start"]
+                event_end = main_event["end"]
+                event_duration = event_end - event_start
+                
+                for i in range(4):
+                    t = event_start + (i / 3) * event_duration if event_duration > 0 else event_start
+                    frame = extract_single_frame(video_path, t)
+                    if frame:
+                        # Save to temp file for gemini_verify
+                        frame_path = os.path.join(frames_dir, f"event_frame_{i}.jpg")
+                        frame.save(frame_path, quality=90)
+                        event_frames.append({"path": frame_path, "timestamp": t, "index": i})
+                
+                if event_frames:
+                    # Create edge_result-like dict for gemini_verify
+                    edge_hint = {
+                        "is_anomaly": True,
+                        "score_diff": hysteresis_result["peak_score"],
+                        "top_anomaly_prompt": anomaly_prompts[0] if anomaly_prompts else "Anomaly detected",
+                    }
+                    gemini_result = gemini_verify(event_frames, camera_context, detection_targets, edge_hint)
             
             print("\n" + "="*60)
             print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
             if final_is_anomaly:
                 print(f"   Events: {hysteresis_result['num_events']}")
                 print(f"   Duration: {hysteresis_result['total_anomaly_duration']:.1f}s ({hysteresis_result['anomaly_percentage']:.1f}%)")
+                if gemini_result and gemini_result.get("anomalyType"):
+                    print(f"   Type: {gemini_result['anomalyType']}")
             print("="*60)
             
             # Condensed score summary (all_scores can be huge)
@@ -929,11 +963,14 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
                 
                 "finalVerdict": {
                     "isAnomaly": final_is_anomaly,
+                    "anomalyType": gemini_result.get("anomalyType") if gemini_result else None,
                     "numEvents": hysteresis_result["num_events"],
                     "totalAnomalyDuration": round(hysteresis_result["total_anomaly_duration"], 2),
                     "anomalyPercentage": round(hysteresis_result["anomaly_percentage"], 2),
                     "peakScore": round(hysteresis_result["peak_score"], 4),
                 },
+                
+                "geminiVerification": gemini_result,
                 
                 "events": [
                     {

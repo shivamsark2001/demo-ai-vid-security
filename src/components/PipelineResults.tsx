@@ -43,6 +43,7 @@ export function PipelineResults({ result }: PipelineResultsProps) {
     const verdict = result.finalVerdict;
     const events = result.events || [];
     const isAnomaly = verdict.isAnomaly;
+    const gemini = result.geminiVerification as GeminiVerification | null;
 
     return (
       <div className="space-y-4">
@@ -71,6 +72,12 @@ export function PipelineResults({ result }: PipelineResultsProps) {
                 }`}>
                   {isAnomaly ? '🚨 Anomaly Detected' : '✅ Normal Activity'}
                 </h3>
+                {/* Show anomaly type from verdict or gemini */}
+                {isAnomaly && (verdict.anomalyType || gemini?.anomalyType) && (
+                  <p className="text-base font-medium text-[var(--text-primary)] mt-1">
+                    {verdict.anomalyType || gemini?.anomalyType}
+                  </p>
+                )}
                 {isAnomaly && verdict.anomalyPercentage !== undefined && (
                   <p className="text-sm text-[var(--text-secondary)] mt-1">
                     {verdict.anomalyPercentage.toFixed(1)}% of video flagged
@@ -104,6 +111,50 @@ export function PipelineResults({ result }: PipelineResultsProps) {
             </div>
           )}
         </div>
+
+        {/* AI Reasoning (from Gemini) */}
+        {gemini?.reasoning && (
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Activity className="w-4 h-4 text-[var(--accent-danger)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                AI Analysis
+              </span>
+              {gemini.confidence !== undefined && (
+                <span className={`ml-auto px-2 py-0.5 rounded-full text-xs font-medium ${
+                  isAnomaly 
+                    ? 'bg-[var(--accent-danger)]/20 text-[var(--accent-danger)]' 
+                    : 'bg-[var(--accent-primary)]/20 text-[var(--accent-primary)]'
+                }`}>
+                  {Math.round(gemini.confidence * 100)}% confidence
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
+              {gemini.reasoning}
+            </p>
+          </div>
+        )}
+
+        {/* Key Observations (from Gemini) */}
+        {gemini?.keyObservations && gemini.keyObservations.length > 0 && (
+          <div className="glass-card p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Eye className="w-4 h-4 text-[var(--accent-primary)]" />
+              <span className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
+                Key Observations
+              </span>
+            </div>
+            <ul className="space-y-2">
+              {gemini.keyObservations.map((obs: string, i: number) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
+                  <span className="text-[var(--accent-primary)] mt-0.5">•</span>
+                  {obs}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Events Timeline */}
         {events.length > 0 && (
