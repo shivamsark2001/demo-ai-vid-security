@@ -314,6 +314,15 @@ JSON ONLY (no markdown):
 def download_video(url: str, output_path: str) -> bool:
     """Download video from URL."""
     print(f"📥 Downloading video...")
+    print(f"   URL: {url[:80]}...")
+    
+    # SAFEGUARD: Reject browser blob: URLs - they only work in the browser
+    if url.startswith('blob:'):
+        print(f"  ❌ ERROR: Cannot download browser blob: URL!")
+        print(f"     blob: URLs only work in the browser that created them.")
+        print(f"     The frontend should upload the video to Vercel Blob first.")
+        return False
+    
     try:
         response = requests.get(url, stream=True, timeout=300)
         response.raise_for_status()
