@@ -8,7 +8,7 @@ import { ContextInput } from '@/components/ContextInput';
 import { AnalysisProgress } from '@/components/AnalysisProgress';
 import { VideoPlayer, VideoPlayerRef } from '@/components/VideoPlayer';
 import { Timeline } from '@/components/Timeline';
-import { EventList } from '@/components/EventList';
+import { PipelineResults } from '@/components/PipelineResults';
 import { AnalysisStatus, AnalysisResult, TimelineEvent } from '@/types';
 
 export default function Home() {
@@ -22,7 +22,6 @@ export default function Home() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   
   const videoRef = useRef<VideoPlayerRef>(null);
 
@@ -196,7 +195,6 @@ export default function Home() {
   };
 
   const handleEventClick = (event: TimelineEvent) => {
-    setSelectedEventId(event.id);
     videoRef.current?.seekTo(event.t0);
     videoRef.current?.play();
   };
@@ -204,26 +202,26 @@ export default function Home() {
   const isAnalyzing = status !== 'idle' && status !== 'completed' && status !== 'failed';
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header - Minimal */}
-        <header className="mb-10 animate-slide-up">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-8 h-8 rounded-lg bg-[var(--accent-primary)] flex items-center justify-center">
-              <Scan className="w-4 h-4 text-[var(--bg-primary)]" />
+    <main className="min-h-screen p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <header className="mb-8 animate-slide-up">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center shadow-lg shadow-[var(--accent-primary)]/20">
+              <Scan className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight">truwo</h1>
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">Truwo</h1>
+              <p className="text-[11px] text-[var(--text-muted)]">Video intelligence</p>
+            </div>
           </div>
-          <p className="text-sm text-[var(--text-muted)] ml-11">
-            Video intelligence for security
-          </p>
         </header>
 
-        {/* Main content */}
-        <div className="grid lg:grid-cols-2 gap-6">
-          {/* Left column */}
-          <div className="space-y-4">
-            <div className="glass-card p-5 animate-slide-up stagger-1">
+        {/* Main Grid */}
+        <div className="grid lg:grid-cols-5 gap-5">
+          {/* Left - Controls */}
+          <div className="lg:col-span-2 space-y-4">
+            <div className="glass-card p-4 animate-slide-up stagger-1">
               <VideoUpload
                 onFileSelect={handleFileSelect}
                 selectedFile={selectedFile}
@@ -232,7 +230,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="glass-card p-5 animate-slide-up stagger-2">
+            <div className="glass-card p-4 animate-slide-up stagger-2">
               <ContextInput
                 cameraContext={cameraContext}
                 detectionTargets={detectionTargets}
@@ -248,7 +246,7 @@ export default function Home() {
               className="btn-primary w-full flex items-center justify-center gap-2 animate-slide-up stagger-3"
             >
               <Play className="w-4 h-4" />
-              {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+              {isAnalyzing ? 'Analyzing...' : 'Analyze Video'}
             </button>
 
             <AnalysisProgress
@@ -258,8 +256,9 @@ export default function Home() {
             />
           </div>
 
-          {/* Right column */}
-          <div className="space-y-4">
+          {/* Right - Results */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* Video Player */}
             {videoUrl && (
               <div className="glass-card p-3 animate-slide-up stagger-2">
                 <VideoPlayer
@@ -271,10 +270,11 @@ export default function Home() {
               </div>
             )}
 
-            {result && result.events.length > 0 && (
-              <div className="glass-card p-5 animate-slide-up">
+            {/* Timeline */}
+            {result && result.events && result.events.length > 0 && (
+              <div className="glass-card p-4 animate-slide-up">
                 <h3 className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider mb-3">
-                  Timeline
+                  Event Timeline
                 </h3>
                 <Timeline
                   events={result.events}
@@ -285,23 +285,21 @@ export default function Home() {
               </div>
             )}
 
+            {/* Pipeline Results */}
             {result && (
-              <div className="glass-card p-5 animate-slide-up">
-                <EventList
-                  events={result.events}
-                  onEventClick={handleEventClick}
-                  selectedEventId={selectedEventId}
-                />
+              <div className="animate-slide-up">
+                <PipelineResults result={result} />
               </div>
             )}
 
+            {/* Empty State */}
             {!videoUrl && (
-              <div className="glass-card p-10 text-center animate-slide-up stagger-2">
-                <div className="w-14 h-14 rounded-xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-3">
-                  <Scan className="w-6 h-6 text-[var(--text-muted)]" />
+              <div className="glass-card p-12 text-center animate-slide-up stagger-2">
+                <div className="w-16 h-16 rounded-2xl bg-[var(--bg-tertiary)] flex items-center justify-center mx-auto mb-4">
+                  <Scan className="w-8 h-8 text-[var(--text-muted)]" />
                 </div>
-                <p className="text-sm text-[var(--text-muted)]">
-                  Upload video to start
+                <p className="text-[var(--text-muted)] text-sm">
+                  Upload a video to begin analysis
                 </p>
               </div>
             )}

@@ -1,9 +1,9 @@
 export interface TimelineEvent {
   id: string;
-  t0: number; // Start time in seconds
-  t1: number; // End time in seconds
+  t0: number;
+  t1: number;
   label: string;
-  score: number; // 0-1 confidence from SigLIP
+  score: number;
   severity: 'high' | 'medium' | 'low';
   geminiVerdict: boolean;
   geminiConfidence: number;
@@ -11,13 +11,44 @@ export interface TimelineEvent {
   keyframeUrls?: string[];
 }
 
+export interface PromptBanks {
+  normalPrompts: string[];
+  anomalyPrompts: string[];
+  detectionSummary: string;
+}
+
+export interface EdgeDetection {
+  isAnomaly: boolean;
+  scoreDiff: number;
+  anomalyScore: number;
+  normalScore: number;
+  confidence: number;
+  perFrameScores: number[];
+  topAnomalyPrompt: string;
+  topNormalPrompt: string;
+}
+
+export interface GeminiVerification {
+  isAnomaly: boolean;
+  anomalyType: string | null;
+  confidence: number;
+  reasoning: string;
+  keyObservations: string[];
+  frameAnalysis: string;
+}
+
 export interface AnalysisResult {
-  jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
-  videoUrl: string;
+  status: string;
   videoDuration: number;
   events: TimelineEvent[];
-  processedAt?: string;
+  
+  // Enhanced pipeline data
+  promptBanks?: PromptBanks;
+  edgeDetection?: EdgeDetection;
+  geminiVerification?: GeminiVerification;
+  annotatedGridB64?: string;
+  frameCount?: number;
+  
   error?: string;
 }
 

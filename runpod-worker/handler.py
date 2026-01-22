@@ -3,6 +3,7 @@
 RunPod Serverless Handler - Video Security Analysis
 ====================================================
 2-Stage Pipeline: SigLIP2 Edge Detection → Gemini Verification
+Returns full pipeline data for enhanced UI
 """
 
 import os
@@ -53,13 +54,12 @@ class TimelineEvent:
 
 
 def load_siglip():
-    """Load SigLIP2 model - tries open_clip first, falls back to transformers."""
+    """Load SigLIP2 model."""
     global SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER, USE_OPEN_CLIP
     
     if SIGLIP_MODEL is not None:
         return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
     
-    # Try open_clip first (better performance)
     try:
         import open_clip
         print("📦 Loading SigLIP2 via open_clip...")
@@ -69,12 +69,10 @@ def load_siglip():
         SIGLIP_MODEL = SIGLIP_MODEL.to(DEVICE).eval()
         SIGLIP_TOKENIZER = open_clip.get_tokenizer("ViT-SO400M-14-SigLIP-384")
         USE_OPEN_CLIP = True
-        print(f"✅ SigLIP2 loaded via open_clip on {DEVICE}")
+        print(f"✅ SigLIP2 loaded on {DEVICE}")
     except ImportError:
-        print("⚠️  open_clip not found, falling back to transformers...")
         from transformers import AutoProcessor, AutoModel
         model_name = "google/siglip-so400m-patch14-384"
-        print(f"📦 Loading {model_name} via transformers...")
         SIGLIP_PREPROCESS = AutoProcessor.from_pretrained(model_name)
         SIGLIP_MODEL = AutoModel.from_pretrained(model_name).to(DEVICE).eval()
         SIGLIP_TOKENIZER = SIGLIP_PREPROCESS
@@ -84,7 +82,6 @@ def load_siglip():
     return SIGLIP_MODEL, SIGLIP_PREPROCESS, SIGLIP_TOKENIZER
 
 
-# ============ Robust JSON Extraction ============
 def extract_json_object(text: str) -> dict | None:
     """Robustly extract JSON from LLM response."""
     if not text:
@@ -111,7 +108,6 @@ def extract_json_object(text: str) -> dict | None:
     return None
 
 
-# ============ Gemini API ============
 def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> str | dict:
     """Call Gemini via OpenRouter."""
     if not OPENROUTER_API_KEY:
@@ -150,7 +146,6 @@ def call_gemini(prompt: str, image_b64: str = None, max_tokens: int = 1000) -> s
     return {"error": "Failed after 3 attempts"}
 
 
-# ============ Prompt Bank Generation ============
 def generate_prompt_banks(camera_context: str, detection_targets: str) -> tuple:
     """Generate normal/anomaly prompts using Gemini."""
     print("🤖 Generating prompt banks via Gemini...")
@@ -171,7 +166,7 @@ Respond in JSON only:
 {{
     "normal_prompts": ["desc1", "desc2", ...],
     "anomaly_prompts": ["desc1", "desc2", ...],
-    "detection_summary": "Brief summary"
+    "detection_summary": "Brief summary of what will be detected"
 }}"""
 
     response = call_gemini(prompt, max_tokens=1500)
@@ -187,10 +182,9 @@ Respond in JSON only:
     return None, f"Parse failed: {response[:300]}"
 
 
-# ============ Video Processing ============
 def download_video(url: str, output_path: str) -> bool:
     """Download video from URL."""
-    print(f"📥 Downloading video from {url[:60]}...")
+    print(f"📥 Downloading video...")
     try:
         response = requests.get(url, stream=True, timeout=300)
         response.raise_for_status()
@@ -205,11 +199,10 @@ def download_video(url: str, output_path: str) -> bool:
         return False
 
 
-def extract_frames(video_path: str, output_dir: str, fps: float = 2, max_frames: int = 64) -> List[Dict]:
+def extract_frames(video_path: str, output_dir: str, fps: float = 2, max_frames: int = 32) -> List[Dict]:
     """Extract frames using ffmpeg."""
-    print(f"🎞️  Extracting frames (fps={fps}, max={max_frames})...")
+    print(f"🎞️  Extracting frames...")
     
-    # Get duration
     try:
         probe = subprocess.check_output([
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -219,11 +212,9 @@ def extract_frames(video_path: str, output_dir: str, fps: float = 2, max_frames:
     except:
         duration = 60
     
-    # Adjust fps
     if duration * fps > max_frames:
         fps = max_frames / duration
     
-    # Extract
     output_pattern = os.path.join(output_dir, "frame_%04d.jpg")
     subprocess.run([
         "ffmpeg", "-i", video_path, "-vf", f"fps={fps}",
@@ -238,10 +229,9 @@ def extract_frames(video_path: str, output_dir: str, fps: float = 2, max_frames:
     return frames
 
 
-# ============ SigLIP Detection ============
 def siglip_detect(frames: List[Dict], normal_prompts: List[str], anomaly_prompts: List[str]) -> Dict:
     """Stage 1: Score frames against prompts."""
-    print(f"⚡ Running SigLIP detection on {len(frames)} frames...")
+    print(f"⚡ Running SigLIP detection...")
     
     model, preprocess, tokenizer = load_siglip()
     
@@ -282,7 +272,6 @@ def siglip_detect(frames: List[Dict], normal_prompts: List[str], anomaly_prompts
         best_anomaly_idx = (img_features @ anomaly_features.T).mean(dim=0).argmax().item()
         best_normal_idx = (img_features @ normal_features.T).mean(dim=0).argmax().item()
     else:
-        # Transformers fallback
         per_frame_scores = []
         all_anomaly = []
         all_normal = []
@@ -315,34 +304,31 @@ def siglip_detect(frames: List[Dict], normal_prompts: List[str], anomaly_prompts
     is_anomaly = score_diff > 0
     
     print(f"  📊 Score diff: {score_diff:+.4f} → {'🚨 ANOMALY' if is_anomaly else '✅ NORMAL'}")
-    print(f"  📊 Per-frame scores: min={min(per_frame_scores):.3f}, max={max(per_frame_scores):.3f}")
-    print(f"  📊 Top anomaly prompt: {anomaly_prompts[best_anomaly_idx]}")
     
     return {
-        "is_anomaly": is_anomaly,
-        "score_diff": score_diff,
-        "anomaly_score": avg_anomaly,
-        "normal_score": avg_normal,
-        "confidence": abs(score_diff),
-        "per_frame_scores": per_frame_scores,
-        "top_anomaly_prompt": anomaly_prompts[best_anomaly_idx],
-        "top_normal_prompt": normal_prompts[best_normal_idx],
+        "isAnomaly": is_anomaly,
+        "scoreDiff": round(score_diff, 4),
+        "anomalyScore": round(avg_anomaly, 4),
+        "normalScore": round(avg_normal, 4),
+        "confidence": round(abs(score_diff), 4),
+        "perFrameScores": [round(s, 4) for s in per_frame_scores],
+        "topAnomalyPrompt": anomaly_prompts[best_anomaly_idx],
+        "topNormalPrompt": normal_prompts[best_normal_idx],
     }
 
 
-# ============ Frame Grid for Gemini ============
-def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_size=256) -> Image.Image:
-    """Create annotated frame grid."""
+def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_size=220) -> Image.Image:
+    """Create annotated frame grid with scores."""
     images = [Image.open(f["path"]).convert("RGB") for f in frames[:16]]
     n = len(images)
     rows = (n + cols - 1) // cols
-    header = 36
+    header = 32
     
-    grid = Image.new('RGB', (cols * tile_size, rows * (tile_size + header)), (12, 12, 20))
+    grid = Image.new('RGB', (cols * tile_size, rows * (tile_size + header)), (9, 9, 11))
     draw = ImageDraw.Draw(grid)
     
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 14)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 12)
     except:
         font = ImageFont.load_default()
     
@@ -355,34 +341,34 @@ def create_annotated_grid(frames: List[Dict], scores: List[float], cols=4, tile_
         
         score = scores[i] if i < len(scores) else 0
         if score > 0.015:
-            bg, color, icon = (80, 20, 20), (255, 100, 100), "⚠️"
+            bg, color = (80, 25, 25), (255, 120, 120)
+            label = f"⚠ F{i+1}: {score:+.3f}"
         elif score < -0.015:
-            bg, color, icon = (20, 60, 20), (100, 255, 100), "✓"
+            bg, color = (25, 60, 25), (120, 255, 120)
+            label = f"✓ F{i+1}: {score:+.3f}"
         else:
-            bg, color, icon = (25, 25, 40), (150, 150, 150), "○"
+            bg, color = (30, 30, 40), (160, 160, 170)
+            label = f"○ F{i+1}: {score:+.3f}"
         
         draw.rectangle([x, y, x + tile_size - 1, y + header - 1], fill=bg)
-        draw.text((x + 8, y + 8), f"{icon} F{i+1}: {score:+.3f}", fill=color, font=font)
+        draw.text((x + 6, y + 8), label, fill=color, font=font)
     
     return grid
 
 
-def image_to_b64(img: Image.Image) -> str:
+def image_to_b64(img: Image.Image, quality: int = 85) -> str:
     buf = BytesIO()
-    img.save(buf, format='JPEG', quality=90)
+    img.save(buf, format='JPEG', quality=quality)
     return base64.b64encode(buf.getvalue()).decode()
 
 
-# ============ Gemini Verification ============
-def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, edge_result: Dict) -> Dict:
+def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: str, edge_result: Dict, grid_b64: str) -> Dict:
     """Stage 2: Gemini verification."""
     print("🧠 Running Gemini verification...")
     
-    grid = create_annotated_grid(frames, edge_result.get("per_frame_scores", []))
-    img_b64 = image_to_b64(grid)
-    
     per_frame_desc = "\n".join([
-        f"  Frame {i+1}: {s:+.3f}" for i, s in enumerate(edge_result.get('per_frame_scores', [])[:16])
+        f"  Frame {i+1}: {s:+.3f} ({'anomaly' if s > 0.01 else 'normal' if s < -0.01 else 'uncertain'})"
+        for i, s in enumerate(edge_result.get('perFrameScores', [])[:16])
     ])
     
     prompt = f"""VIDEO ANOMALY VERIFICATION
@@ -390,25 +376,28 @@ def gemini_verify(frames: List[Dict], camera_context: str, detection_targets: st
 CAMERA: {camera_context}
 TARGETS: {detection_targets}
 
-EDGE DETECTOR RESULT:
-- Assessment: {"ANOMALY" if edge_result.get('is_anomaly') else "NORMAL"}
-- Score diff: {edge_result.get('score_diff', 0):+.4f}
-- Top anomaly: "{edge_result.get('top_anomaly_prompt', '')}"
-- Top normal: "{edge_result.get('top_normal_prompt', '')}"
+EDGE DETECTOR (SigLIP2) RESULT:
+- Assessment: {"ANOMALY" if edge_result.get('isAnomaly') else "NORMAL"}
+- Score diff: {edge_result.get('scoreDiff', 0):+.4f}
+- Top anomaly match: "{edge_result.get('topAnomalyPrompt', '')}"
+- Top normal match: "{edge_result.get('topNormalPrompt', '')}"
 
 PER-FRAME SCORES:
 {per_frame_desc}
 
-Analyze the frame grid. Respond in JSON:
+The image shows a frame grid with scores. Analyze carefully.
+
+Respond in JSON:
 {{
-    "is_anomaly": true/false,
-    "anomaly_type": "specific type or null",
+    "isAnomaly": true/false,
+    "anomalyType": "specific type or null",
     "confidence": 0.0-1.0,
-    "reasoning": "what you see",
-    "key_observations": ["obs1", "obs2"]
+    "reasoning": "detailed analysis of what you see",
+    "keyObservations": ["observation 1", "observation 2", "observation 3"],
+    "frameAnalysis": "which specific frames show the anomaly and why"
 }}"""
 
-    response = call_gemini(prompt, img_b64, max_tokens=800)
+    response = call_gemini(prompt, grid_b64, max_tokens=1000)
     
     if isinstance(response, dict) and "error" in response:
         print(f"  ❌ Gemini error: {response['error']}")
@@ -416,34 +405,40 @@ Analyze the frame grid. Respond in JSON:
     
     parsed = extract_json_object(response)
     if parsed:
-        print(f"  ✅ Gemini verdict: {'🚨 ANOMALY' if parsed.get('is_anomaly') else '✅ NORMAL'}")
-        print(f"  📝 Reasoning: {parsed.get('reasoning', '')[:100]}...")
-        return parsed
+        print(f"  ✅ Gemini verdict: {'🚨 ANOMALY' if parsed.get('isAnomaly') else '✅ NORMAL'}")
+        return {
+            "isAnomaly": parsed.get("isAnomaly", False),
+            "anomalyType": parsed.get("anomalyType"),
+            "confidence": parsed.get("confidence", 0),
+            "reasoning": parsed.get("reasoning", ""),
+            "keyObservations": parsed.get("keyObservations", []),
+            "frameAnalysis": parsed.get("frameAnalysis", "")
+        }
     
-    return {"reasoning": response, "is_anomaly": "anomaly" in response.lower()}
+    return {
+        "reasoning": response,
+        "isAnomaly": "anomaly" in response.lower() and "no anomaly" not in response.lower()
+    }
 
 
-# ============ RunPod Handler ============
 def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Main RunPod handler.
-    Input: { video_url, camera_context, detection_targets, fps, max_frames }
-    Output: { events: [...], videoDuration, processedAt }
+    Main RunPod handler - returns full pipeline data.
     """
     job_input = job.get("input", {})
     
     video_url = job_input.get("video_url")
     camera_context = job_input.get("camera_context", "Security surveillance camera")
-    detection_targets = job_input.get("detection_targets", "Fire, smoke, suspicious activity")
+    detection_targets = job_input.get("detection_targets", "Suspicious activity")
     fps = job_input.get("fps", 2)
-    max_frames = job_input.get("max_frames", 64)
+    max_frames = job_input.get("max_frames", 32)
     
     if not video_url:
         return {"error": "video_url is required"}
     
-    print("\n" + "="*60)
-    print("🎬 VIDEO SECURITY ANALYSIS PIPELINE")
-    print("="*60)
+    print("\n" + "="*50)
+    print("🎬 TRUWO VIDEO ANALYSIS")
+    print("="*50)
     
     with tempfile.TemporaryDirectory() as temp_dir:
         video_path = os.path.join(temp_dir, "video.mp4")
@@ -464,9 +459,6 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         if error:
             return {"error": f"Prompt generation failed: {error}"}
         
-        print(f"\n📋 Sample normal prompts: {prompt_banks['normal_prompts'][:3]}")
-        print(f"📋 Sample anomaly prompts: {prompt_banks['anomaly_prompts'][:3]}")
-        
         # Step 4: SigLIP detection
         edge_result = siglip_detect(
             frames,
@@ -477,34 +469,37 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         if "error" in edge_result:
             return {"error": edge_result["error"]}
         
+        # Create annotated grid
+        grid = create_annotated_grid(frames, edge_result.get("perFrameScores", []))
+        grid_b64 = image_to_b64(grid)
+        
         # Step 5: Gemini verification
-        gemini_result = gemini_verify(frames, camera_context, detection_targets, edge_result)
+        gemini_result = gemini_verify(frames, camera_context, detection_targets, edge_result, grid_b64)
         
-        # Final result
-        final_is_anomaly = gemini_result.get("is_anomaly", edge_result["is_anomaly"])
+        # Final verdict
+        final_is_anomaly = gemini_result.get("isAnomaly", edge_result["isAnomaly"])
+        final_confidence = gemini_result.get("confidence", edge_result["confidence"])
         
-        print("\n" + "="*60)
-        print(f"🎯 FINAL VERDICT: {'🚨 ANOMALY DETECTED' if final_is_anomaly else '✅ NORMAL'}")
-        print("="*60)
+        print("\n" + "="*50)
+        print(f"🎯 VERDICT: {'🚨 ANOMALY' if final_is_anomaly else '✅ NORMAL'}")
+        print("="*50)
         
-        # Build timeline events
+        # Build events
         events = []
         if final_is_anomaly:
             first_ts = frames[0]["timestamp"]
             last_ts = frames[-1]["timestamp"]
-            
-            confidence = gemini_result.get("confidence", edge_result["confidence"])
-            severity = "high" if confidence >= 0.7 else "medium" if confidence >= 0.5 else "low"
+            severity = "high" if final_confidence >= 0.7 else "medium" if final_confidence >= 0.5 else "low"
             
             event = TimelineEvent(
                 id=str(uuid.uuid4()),
                 t0=first_ts,
                 t1=last_ts,
-                label=gemini_result.get("anomaly_type") or edge_result.get("top_anomaly_prompt", "Anomaly"),
-                score=confidence,
+                label=gemini_result.get("anomalyType") or edge_result.get("topAnomalyPrompt", "Anomaly"),
+                score=final_confidence,
                 severity=severity,
                 geminiVerdict=True,
-                geminiConfidence=confidence,
+                geminiConfidence=final_confidence,
                 geminiExplanation=gemini_result.get("reasoning", ""),
                 keyframeUrls=[]
             )
@@ -512,15 +507,30 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
         
         video_duration = frames[-1]["timestamp"] if frames else 0
         
+        # Return full pipeline data
         return {
-            "jobId": job.get("id", ""),
             "status": "completed",
-            "videoUrl": video_url,
             "videoDuration": video_duration,
             "events": events,
-            "processedAt": subprocess.check_output(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).decode().strip()
+            
+            # Enhanced data for UI
+            "promptBanks": {
+                "normalPrompts": prompt_banks.get("normal_prompts", []),
+                "anomalyPrompts": prompt_banks.get("anomaly_prompts", []),
+                "detectionSummary": prompt_banks.get("detection_summary", "")
+            },
+            "edgeDetection": edge_result,
+            "geminiVerification": {
+                "isAnomaly": gemini_result.get("isAnomaly", False),
+                "anomalyType": gemini_result.get("anomalyType"),
+                "confidence": gemini_result.get("confidence", 0),
+                "reasoning": gemini_result.get("reasoning", ""),
+                "keyObservations": gemini_result.get("keyObservations", []),
+                "frameAnalysis": gemini_result.get("frameAnalysis", "")
+            },
+            "annotatedGridB64": f"data:image/jpeg;base64,{grid_b64}",
+            "frameCount": len(frames)
         }
 
 
-# Start RunPod serverless
 runpod.serverless.start({"handler": handler})

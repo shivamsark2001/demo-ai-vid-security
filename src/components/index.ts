@@ -4,3 +4,4 @@ export { AnalysisProgress } from './AnalysisProgress';
 export { VideoPlayer, type VideoPlayerRef } from './VideoPlayer';
 export { Timeline } from './Timeline';
 export { EventList } from './EventList';
+export { PipelineResults } from './PipelineResults';
