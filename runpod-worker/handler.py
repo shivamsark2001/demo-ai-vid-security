@@ -822,8 +822,8 @@ def handler(job: Dict[str, Any]) -> Dict[str, Any]:
     
     # Hysteresis mode params - TUNED FOR BETTER SENSITIVITY
     sample_fps = job_input.get("sample_fps", 2.0)
-    high_threshold = job_input.get("high_threshold", 0.01)      # Lower = more sensitive
-    low_threshold = job_input.get("low_threshold", -0.005)      # Higher = stays in anomaly longer
+    high_threshold = job_input.get("high_threshold", 0)      # Lower = more sensitive
+    low_threshold = job_input.get("low_threshold", -0.001)      # Higher = stays in anomaly longer
     min_frames_to_trigger = job_input.get("min_frames_to_trigger", 2)  # Faster trigger
     min_frames_to_clear = job_input.get("min_frames_to_clear", 4)      # Slightly faster clear
     
