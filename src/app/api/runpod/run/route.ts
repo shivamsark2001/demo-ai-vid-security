@@ -24,14 +24,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('Starting analysis job:', { 
+    console.log('Starting analysis:', { 
       video_url: video_url.substring(0, 60) + '...', 
       camera_context: camera_context?.substring(0, 30),
       detection_targets: detection_targets?.substring(0, 30)
     });
 
-    // Call async endpoint for job-based processing
-    const response = await fetch(`${API_URL}/analyze/async`, {
+    // Use synchronous /analyze endpoint directly
+    const response = await fetch(`${API_URL}/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -50,23 +50,26 @@ export async function POST(request: NextRequest) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('API error:', errorText);
+      console.error('API error:', response.status, errorText);
       return NextResponse.json(
-        { error: 'Failed to start analysis job' },
+        { error: `Analysis failed: ${errorText}` },
         { status: response.status }
       );
     }
 
-    const data = await response.json();
+    const result = await response.json();
+    console.log('Analysis complete:', result.category);
     
+    // Return result directly (no job ID needed for sync)
     return NextResponse.json({
-      id: data.job_id || data.id,
-      status: data.status || 'IN_QUEUE',
+      id: 'sync',
+      status: 'COMPLETED',
+      output: result,
     });
   } catch (error) {
-    console.error('Analysis run error:', error);
+    console.error('Analysis error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

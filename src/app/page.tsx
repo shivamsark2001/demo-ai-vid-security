@@ -171,9 +171,6 @@ export default function Home() {
         return;
       }
 
-      let useMock = false;
-      let jobId = '';
-
       // FINAL SAFEGUARD: Never send browser blob: URLs to backend
       if (!blobUrl || blobUrl.startsWith('blob:')) {
         console.error('CRITICAL: Invalid URL before sending to backend:', blobUrl);
@@ -182,10 +179,14 @@ export default function Home() {
         return;
       }
 
-      console.log('✅ Sending to RunPod:', blobUrl.substring(0, 100));
+      console.log('✅ Sending for analysis:', blobUrl.substring(0, 100));
+
+      setStatus('processing');
+      setCurrentStep('Analyzing video with AI...');
+      setProgress(30);
 
       try {
-        const runpodResponse = await fetch('/api/runpod/run', {
+        const response = await fetch('/api/runpod/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -195,25 +196,38 @@ export default function Home() {
           }),
         });
 
-        if (runpodResponse.ok) {
-          const runpodData = await runpodResponse.json();
-          jobId = runpodData.id;
-        } else {
-          useMock = true;
-        }
-      } catch {
-        useMock = true;
-      }
+        const data = await response.json();
 
-      if (useMock) {
-        setStatus('processing');
-        setCurrentStep('Analyzing...');
+        if (!response.ok) {
+          throw new Error(data.error || 'Analysis failed');
+        }
+
+        // Handle sync response (result comes back directly)
+        if (data.status === 'COMPLETED' && data.output) {
+          setResult(data.output);
+          setStatus('completed');
+          setProgress(100);
+          return;
+        }
+
+        // Fallback: poll if we got a job ID
+        if (data.id && data.id !== 'sync') {
+          setProgress(40);
+          const analysisResult = await pollJobStatus(data.id);
+          if (analysisResult) {
+            setResult(analysisResult);
+            setStatus('completed');
+            setProgress(100);
+          }
+          return;
+        }
+
+        throw new Error('Unexpected response format');
+      } catch (apiError) {
+        console.error('API error, falling back to mock:', apiError);
         
-        for (let i = 0; i <= 100; i += 10) {
-          setProgress(i);
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-
+        // Fallback to mock
+        setCurrentStep('Using demo mode...');
         const mockResponse = await fetch('/api/mock-analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -226,16 +240,6 @@ export default function Home() {
 
         const mockResult = await mockResponse.json();
         setResult(mockResult);
-        setStatus('completed');
-        setProgress(100);
-        return;
-      }
-
-      setProgress(10);
-      const analysisResult = await pollJobStatus(jobId);
-      
-      if (analysisResult) {
-        setResult(analysisResult);
         setStatus('completed');
         setProgress(100);
       }
