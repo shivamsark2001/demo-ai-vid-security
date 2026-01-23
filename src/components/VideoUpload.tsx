@@ -13,8 +13,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-red-500',
     bgColor: 'bg-red-500/20',
-    suggestedContext: 'Store or bank surveillance camera',
-    suggestedTargets: 'Robbery, theft, armed threat, aggressive behavior',
+    suggestedContext: 'Convenience store interior, security camera mounted high looking at checkout counter area. White service counter with register on left side. Gachapon toy dispensing machines and product display racks in center. Fire extinguisher mounted on right wall near exit. Ice cream freezer visible on far left. Storage cabinets along back wall. Wet floor caution sign visible. Typical activity: customers browsing, employees behind counter.',
+    suggestedTargets: 'Robbery, armed threat, weapon, aggressive confrontation, threatening behavior, masked intruder',
   },
   {
     id: 'robbery2',
@@ -24,8 +24,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-red-400',
     bgColor: 'bg-red-500/20',
-    suggestedContext: 'Store or bank surveillance camera',
-    suggestedTargets: 'Robbery, theft, armed threat, aggressive behavior',
+    suggestedContext: 'Tobacco/convenience store interior, security camera mounted high behind counter looking toward checkout area. Female clerk behind register counter. Glass display cases with cigarettes and tobacco products on back wall. Product displays and merchandise on counter. Multiple customers can approach counter area. Typical activity: customers purchasing cigarettes, lottery tickets, convenience items.',
+    suggestedTargets: 'Robbery, armed threat, gun, weapon pointed at person, threatening confrontation, holdup',
   },
   {
     id: 'fighting1',
@@ -35,8 +35,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-orange-500',
     bgColor: 'bg-orange-500/20',
-    suggestedContext: 'Public area or street surveillance camera',
-    suggestedTargets: 'Fighting, physical assault, violence, aggressive behavior',
+    suggestedContext: 'Public area or street surveillance camera monitoring pedestrian traffic and sidewalk activity.',
+    suggestedTargets: 'Fighting, physical altercation, brawl, assault, aggressive confrontation, people pushing and shoving, violent struggle',
   },
   {
     id: 'fighting2',
@@ -46,8 +46,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-orange-400',
     bgColor: 'bg-orange-500/20',
-    suggestedContext: 'Public area or street surveillance camera',
-    suggestedTargets: 'Fighting, physical assault, violence, aggressive behavior',
+    suggestedContext: 'Nighttime street scene, camera capturing parking area or roadside. Urban setting with parked vehicles visible. Group of people gathered on pavement/sidewalk area. Street markings visible on road surface. Typical activity: pedestrians walking, people socializing outside bars/clubs at night.',
+    suggestedTargets: 'Fighting, physical altercation, brawl, assault, aggressive confrontation, people pushing and shoving, violent struggle',
   },
   {
     id: 'vandalism',
@@ -57,8 +57,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-yellow-500',
     bgColor: 'bg-yellow-500/20',
-    suggestedContext: 'Property or building exterior surveillance camera',
-    suggestedTargets: 'Vandalism, property damage, graffiti, destruction',
+    suggestedContext: 'Convenience store interior, overhead security camera with bird\'s eye view of checkout area. Two POS register terminals at checkout counter. Store clerk working behind counter. Product shelves with snacks and merchandise on both sides. Tile/brick pattern flooring. Multiple customers can be in store simultaneously. Typical activity: customers browsing, purchasing items at register.',
+    suggestedTargets: 'Vandalism, property damage, destruction, aggressive behavior, throwing objects, smashing items, violent outburst',
   },
   {
     id: 'theft',
@@ -68,8 +68,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/20',
-    suggestedContext: 'Store or parking area surveillance camera',
-    suggestedTargets: 'Theft, stealing, shoplifting, unauthorized removal',
+    suggestedContext: 'Daytime street view, security camera mounted at storefront watching sidewalk and road. Parked vehicles including SUV and motorcycles along curb. Paved brick sidewalk. Business/bakery entrance visible on left side. Urban residential or commercial street. Typical activity: pedestrians walking, vehicles parking, customers entering shops.',
+    suggestedTargets: 'Theft, stealing, vehicle theft, motorcycle theft, suspicious tampering, person taking items, grab and run, furtive behavior around parked vehicles',
   },
   {
     id: 'abuse',
@@ -79,8 +79,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-pink-500',
     bgColor: 'bg-pink-500/20',
-    suggestedContext: 'Indoor or facility surveillance camera',
-    suggestedTargets: 'Abuse, physical harm, assault, mistreatment',
+    suggestedContext: 'Church or religious building interior, overhead security camera viewing entrance hall/vestibule. Large stone or marble floored room with high ceilings. Arched doorway with stairs on left side. Religious icon painting mounted on wall between two doorways. Small table or desk in center of room. Typical activity: visitors entering, people praying, church staff working.',
+    suggestedTargets: 'Abuse, assault, violence, physical attack, aggressive confrontation, person being struck, harmful physical contact',
   },
   {
     id: 'fire',
@@ -90,8 +90,8 @@ export const SAMPLE_VIDEOS = [
     icon: ShieldAlert,
     color: 'text-amber-500',
     bgColor: 'bg-amber-500/20',
-    suggestedContext: 'Building or facility surveillance camera',
-    suggestedTargets: 'Fire, smoke, flames, burning, safety hazard',
+    suggestedContext: 'Industrial facility/factory exterior, security camera monitoring processing area. Heavy machinery, conveyor systems, and metal structures visible. Pile of agricultural material (sugarcane/biomass) on ground. Truck or heavy vehicle on left side. Workers may be present operating machinery. Typical activity: trucks unloading material, machinery processing, workers moving around equipment.',
+    suggestedTargets: 'Fire, flames, smoke, explosion, burning material, sparks, industrial accident, fire hazard',
   },
 ];
 
