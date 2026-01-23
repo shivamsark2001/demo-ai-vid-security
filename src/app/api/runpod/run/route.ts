@@ -42,9 +42,9 @@ export async function POST(request: NextRequest) {
         detection_targets: detection_targets || 'Suspicious or threatening behavior',
         sample_fps: 2.0,
         high_threshold: 0.015,
-        low_threshold: 0,
+        low_threshold: 0.005,
         min_frames_to_trigger: 2,
-        min_frames_to_clear: 4,
+        min_frames_to_clear: 3,
       }),
     });
 
