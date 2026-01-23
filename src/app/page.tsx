@@ -224,24 +224,14 @@ export default function Home() {
 
         throw new Error('Unexpected response format');
       } catch (apiError) {
-        console.error('API error, falling back to mock:', apiError);
-        
-        // Fallback to mock
-        setCurrentStep('Using demo mode...');
-        const mockResponse = await fetch('/api/mock-analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_url: blobUrl,
-            camera_context: cameraContext,
-            detection_targets: detectionTargets,
-          }),
+        console.error('API error:', apiError);
+        const errorMessage = apiError instanceof Error ? apiError.message : 'Analysis failed';
+        setResult({
+          category: 'error',
+          reasoning: `Analysis failed: ${errorMessage}. Please check that the backend server is running and accessible.`,
+          error: errorMessage,
         });
-
-        const mockResult = await mockResponse.json();
-        setResult(mockResult);
-        setStatus('completed');
-        setProgress(100);
+        setStatus('failed');
       }
     } catch (error) {
       console.error('Analysis error:', error);

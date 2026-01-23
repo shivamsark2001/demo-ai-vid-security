@@ -3,6 +3,13 @@ import { NextRequest, NextResponse } from 'next/server';
 // Self-hosted API via Cloudflare tunnel
 const API_URL = process.env.ANALYSIS_API_URL || 'https://than-connector-additional-surgeons.trycloudflare.com';
 
+// Timeout for video analysis (5 minutes - videos can take a while to process)
+const ANALYSIS_TIMEOUT_MS = 5 * 60 * 1000; // 300 seconds
+
+// Allow this serverless function to run for up to 5 minutes (Vercel Pro/Enterprise)
+// On Vercel Hobby plan, max is 60 seconds - upgrade if needed for long videos
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -30,6 +37,10 @@ export async function POST(request: NextRequest) {
       detection_targets: detection_targets?.substring(0, 30)
     });
 
+    // Create abort controller for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
+
     // Use synchronous /analyze endpoint directly
     const response = await fetch(`${API_URL}/analyze`, {
       method: 'POST',
@@ -46,7 +57,10 @@ export async function POST(request: NextRequest) {
         min_frames_to_trigger: 2,
         min_frames_to_clear: 3,
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -68,6 +82,15 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Analysis error:', error);
+    
+    // Check if it's a timeout error
+    if (error instanceof Error && error.name === 'AbortError') {
+      return NextResponse.json(
+        { error: 'Analysis timed out after 5 minutes. Try a shorter video or check if the backend is processing correctly.' },
+        { status: 504 }
+      );
+    }
+    
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
