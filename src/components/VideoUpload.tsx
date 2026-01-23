@@ -6,12 +6,23 @@ import { Upload, Film, X, FileVideo, ShieldAlert, Link } from 'lucide-react';
 // Sample videos for demo
 export const SAMPLE_VIDEOS = [
   {
-    id: 'robbery',
-    name: 'Robbery',
+    id: 'robbery1',
+    name: 'Robbery #1',
+    url: 'https://82qj2yqd8lzq6kc0.public.blob.vercel-storage.com/Robbery069_x264.mp4',
+    size: '5.4 MB',
+    icon: ShieldAlert,
+    color: 'text-red-500',
+    bgColor: 'bg-red-500/20',
+    suggestedContext: 'Store or bank surveillance camera',
+    suggestedTargets: 'Robbery, theft, armed threat, aggressive behavior',
+  },
+  {
+    id: 'robbery2',
+    name: 'Robbery #2',
     url: 'https://82qj2yqd8lzq6kc0.public.blob.vercel-storage.com/Robbery004_x264.mp4',
     size: '8.2 MB',
     icon: ShieldAlert,
-    color: 'text-red-500',
+    color: 'text-red-400',
     bgColor: 'bg-red-500/20',
     suggestedContext: 'Store or bank surveillance camera',
     suggestedTargets: 'Robbery, theft, armed threat, aggressive behavior',
@@ -70,6 +81,17 @@ export const SAMPLE_VIDEOS = [
     bgColor: 'bg-pink-500/20',
     suggestedContext: 'Indoor or facility surveillance camera',
     suggestedTargets: 'Abuse, physical harm, assault, mistreatment',
+  },
+  {
+    id: 'fire',
+    name: 'Fire Incident',
+    url: 'https://82qj2yqd8lzq6kc0.public.blob.vercel-storage.com/WhatsApp%20Video%202026-01-21%20at%2018.54.28.mp4',
+    size: '6.2 MB',
+    icon: ShieldAlert,
+    color: 'text-amber-500',
+    bgColor: 'bg-amber-500/20',
+    suggestedContext: 'Building or facility surveillance camera',
+    suggestedTargets: 'Fire, smoke, flames, burning, safety hazard',
   },
 ];
 
