@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Upload, Film, X, FileVideo, ShieldAlert, Link } from 'lucide-react';
+import { Upload, Film, X, FileVideo, ShieldAlert, Link, CheckCircle } from 'lucide-react';
 
 // Sample videos for demo
 export const SAMPLE_VIDEOS = [
@@ -72,15 +72,15 @@ export const SAMPLE_VIDEOS = [
     suggestedTargets: 'Theft, stealing, vehicle theft, motorcycle theft, suspicious tampering, person taking items, grab and run, furtive behavior around parked vehicles',
   },
   {
-    id: 'abuse',
-    name: 'Abuse',
+    id: 'normal',
+    name: 'Normal Activity',
     url: 'https://82qj2yqd8lzq6kc0.public.blob.vercel-storage.com/Abuse001_x264.mp4',
     size: '15 MB',
-    icon: ShieldAlert,
-    color: 'text-pink-500',
-    bgColor: 'bg-pink-500/20',
+    icon: CheckCircle,
+    color: 'text-green-500',
+    bgColor: 'bg-green-500/20',
     suggestedContext: 'Church or religious building interior, overhead security camera viewing entrance hall/vestibule. Large stone or marble floored room with high ceilings. Arched doorway with stairs on left side. Religious icon painting mounted on wall between two doorways. Small table or desk in center of room. Typical activity: visitors entering, people praying, church staff working.',
-    suggestedTargets: 'Abuse, assault, violence, physical attack, aggressive confrontation, person being struck, harmful physical contact',
+    suggestedTargets: 'Suspicious activity, unauthorized access, theft, vandalism, aggressive behavior',
   },
   {
     id: 'fire',
